@@ -13,8 +13,8 @@ app.get('/api/status', (req, res) => {
   res.json({ status: 'ok', message: 'Proxmox Manager API is running' });
 });
 
-// For all other routes, serve the main HTML
-app.get('*', (req, res) => {
+// Serve the main HTML file for root path only
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 

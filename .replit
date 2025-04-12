@@ -1,0 +1,52 @@
+modules = ["nodejs-20"]
+
+[nix]
+channel = "stable-24_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Proxmox Manager App"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "proxmox-manager"
+
+[[workflows.workflow]]
+name = "Proxmox Manager App"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm install && npm start"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "proxmox-manager"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm start"
+
+[deployment]
+run = ["sh", "-c", "npm install && npm start"]

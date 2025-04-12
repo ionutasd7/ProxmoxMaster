@@ -1,0 +1,52 @@
+appId: "com.ionutlab.proxmox-manager"
+productName: "Proxmox Infrastructure Manager"
+copyright: "Copyright © 2023 Proxmox Manager"
+
+directories:
+  output: "dist"
+  buildResources: "build"
+
+files:
+  - "**/*"
+  - "!**/*.{ts,md,map}"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/node_modules/.package-lock.json"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,__pycache__,thumbs.db,.gitignore,.gitattributes}"
+  - "!**/{.idea,.vs,.vscode}"
+
+win:
+  icon: "build/icon.ico"
+  target:
+    - "nsis"
+  artifactName: "${productName}-Setup-${version}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "${productName}"
+
+mac:
+  icon: "build/icon.icns"
+  category: "public.app-category.utilities"
+  target:
+    - "dmg"
+  artifactName: "${productName}-${version}.${ext}"
+
+linux:
+  icon: "build/icons"
+  category: "Utility"
+  target:
+    - "AppImage"
+    - "deb"
+  artifactName: "${productName}-${version}.${ext}"
+
+publish:
+  provider: "github"
+  releaseType: "draft"

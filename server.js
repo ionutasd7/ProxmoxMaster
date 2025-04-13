@@ -570,7 +570,7 @@ app.post('/api/login', async (req, res) => {
 // Node management routes
 app.get('/api/nodes', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, hostname, port, username, password, status, created_at FROM nodes');
+    const result = await pool.query('SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes');
     
     // Map existing schema to expected format in the frontend
     const mappedNodes = result.rows.map(node => ({
@@ -588,7 +588,7 @@ app.get('/api/nodes', async (req, res) => {
       use_ssl: true,
       verify_ssl: node.ssl_verify || false,
       created_at: node.created_at,
-      status: node.status || 'online'
+      status: node.node_status || 'online'
     }));
     
     res.json(mappedNodes);
@@ -618,10 +618,10 @@ app.post('/api/nodes', async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO nodes (
-        name, hostname, port, username, password, ssl_verify, status, created_at
+        name, hostname, port, username, password, ssl_verify, node_status, created_at
       ) 
       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      RETURNING id, name, hostname, port, username, status, created_at`,
+      RETURNING id, name, hostname, port, username, node_status, created_at`,
       [
         name, 
         api_host, // Use api_host as hostname
@@ -649,7 +649,7 @@ app.post('/api/nodes', async (req, res) => {
       ssh_password: null, // Don't send password back to client
       use_ssl: true,
       verify_ssl: verify_ssl || false,
-      status: node.status || 'online', // Include status in response
+      status: node.node_status || 'online', // Include status in response
       created_at: node.created_at
     };
     

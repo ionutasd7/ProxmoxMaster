@@ -13,16 +13,12 @@ const { Client } = require('ssh2');
 const fs = require('fs');
 require('dotenv').config();
 
-// Check for development mode
+// Check environment mode
 // NODE_ENV is a common environment variable used to determine the application environment
-// We'll default to development mode unless explicitly set to production
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'development';
-  console.log('Running in development mode - Proxmox connections will be simulated');
+  console.log('Running in development mode');
 }
-
-// This flag can be used throughout the application to check if we're in development mode
-const isDevelopment = process.env.NODE_ENV !== 'production';
 
 // Create Express app
 const app = express();
@@ -355,45 +351,14 @@ app.delete('/api/nodes/:id', async (req, res) => {
 app.post('/api/test-connection', async (req, res) => {
   const { host, port, username, password, realm, ssl, verify } = req.body;
   
-  // Since we're in a development environment, we'll simulate a successful response
-  // In a production environment, this would actually try to connect to the Proxmox API
-  
-  // For development purposes only - in production, this would verify the connection
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  
-  if (isDevelopment) {
-    // Validate input
-    if (!host || !port || !username || !password) {
-      return res.status(400).json({
-        success: false, 
-        message: 'Missing required connection parameters'
-      });
-    }
-    
-    // Simulate connection - testing credentials
-    if (username.includes('@') && password.length > 0) {
-      // Simulated successful test for development
-      return res.json({
-        success: true,
-        message: 'Connection successful! (Development mode)',
-        data: {
-          data: {
-            version: '7.4.1',
-            release: 'development',
-            repoid: 'simulated-dev-environment'
-          }
-        }
-      });
-    } else {
-      // Simulated failed test
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
+  // Validate input
+  if (!host || !port || !username || !password) {
+    return res.status(400).json({
+      success: false, 
+      message: 'Missing required connection parameters'
+    });
   }
   
-  // Production code below - only executes in production
   // Authentication object to pass to Proxmox API
   const auth = {
     username: `${username}@${realm}`,
@@ -450,41 +415,14 @@ app.post('/api/test-connection', async (req, res) => {
 app.post('/api/test-ssh', async (req, res) => {
   const { host, port, username, password } = req.body;
   
-  // Since we're in a development environment, we'll simulate a successful response
-  // In a production environment, this would actually try to connect via SSH
-  
-  // For development purposes only - in production, this would verify the SSH connection
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  
-  if (isDevelopment) {
-    // Validate input
-    if (!host || !port || !username || !password) {
-      return res.status(400).json({
-        success: false, 
-        message: 'Missing required SSH connection parameters'
-      });
-    }
-    
-    // Simulate SSH connection - basic validation
-    if (username.length > 0 && password.length > 0) {
-      // Simulated successful test for development
-      return res.json({
-        success: true,
-        message: 'SSH connection successful! (Development mode)',
-        data: { 
-          output: 'Simulated SSH output: 12:34:56 up 1 day, 3:45, 1 user, load average: 0.15, 0.10, 0.05'
-        }
-      });
-    } else {
-      // Simulated failed test
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid SSH credentials'
-      });
-    }
+  // Validate input
+  if (!host || !port || !username || !password) {
+    return res.status(400).json({
+      success: false, 
+      message: 'Missing required SSH connection parameters'
+    });
   }
   
-  // Production code below - only executes in production
   const conn = new Client();
   
   conn.on('ready', () => {
@@ -572,56 +510,6 @@ app.get('/api/nodes/:id', async (req, res) => {
       verify_ssl: false
     };
     
-    // For development purposes only - in production, this would actually connect to Proxmox API
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    if (isDevelopment) {
-      // Simulate Proxmox API response with development data
-      return res.json({
-        node: node,
-        cluster: [
-          {
-            type: "cluster",
-            id: "cluster",
-            name: "Dev Cluster",
-            nodes: 4,
-            quorate: true,
-            version: "7.4.1"
-          }
-        ],
-        status: {
-          cpuinfo: {
-            cores: 8,
-            cpus: 8,
-            flags: "fpu vme de pse pae msr",
-            hvm: "1",
-            mhz: "3600.000",
-            model: "AMD Ryzen 7 (Development)",
-            sockets: 1,
-            "user_hz": "100"
-          },
-          memory: {
-            free: 12582912000,
-            total: 16777216000,
-            used: 4194304000
-          },
-          swap: {
-            free: 4194304000,
-            total: 4194304000,
-            used: 0
-          },
-          rootfs: {
-            free: 104857600000,
-            total: 209715200000,
-            used: 104857600000
-          },
-          uptime: 86400, // 1 day
-          pveversion: "pve-manager/7.4.1 (development mode)"
-        }
-      });
-    }
-    
-    // Production code below - only executes in production
     // Connect to Proxmox API to get real-time data
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
@@ -697,43 +585,6 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
       verify_ssl: false
     };
     
-    // For development purposes only - in production, this would actually connect to Proxmox API
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    if (isDevelopment) {
-      // Simulate VM list with development data
-      return res.json([
-        {
-          vmid: 100,
-          name: "dev-vm-01",
-          status: "running",
-          maxmem: 4294967296, // 4GB
-          maxcpu: 2,
-          node: dbNode.name,
-          type: "qemu"
-        },
-        {
-          vmid: 101,
-          name: "dev-vm-02",
-          status: "stopped",
-          maxmem: 2147483648, // 2GB
-          maxcpu: 1,
-          node: dbNode.name,
-          type: "qemu"
-        },
-        {
-          vmid: 102,
-          name: "dev-vm-03",
-          status: "running",
-          maxmem: 8589934592, // 8GB
-          maxcpu: 4,
-          node: dbNode.name,
-          type: "qemu"
-        }
-      ]);
-    }
-    
-    // Production code below - only executes in production    
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,

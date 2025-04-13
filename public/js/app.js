@@ -73,18 +73,17 @@ class App {
       const status = await this.api.getStatus();
       console.log('API Status:', status);
       
-      // Check if user is logged in
-      if (localStorage.getItem('authToken')) {
-        // Try to get user data
-        try {
-          const userData = await this.api.getCurrentUser();
+      // Check if user is logged in using session
+      try {
+        const userData = await this.api.getCurrentUser();
+        if (userData.user) {
           this.state.setUser(userData.user);
           this.router.navigate('dashboard');
-        } catch (error) {
-          console.error('Failed to get user data:', error);
+        } else {
           this.router.navigate('auth');
         }
-      } else {
+      } catch (error) {
+        console.error('Failed to get user data:', error);
         this.router.navigate('auth');
       }
     } catch (error) {
@@ -102,7 +101,6 @@ class App {
       
       if (response.user) {
         this.state.setUser(response.user);
-        localStorage.setItem('authToken', 'tempToken'); // In a real app, we'd store the actual token
         this.ui.hideLoading();
         this.router.navigate('dashboard');
         return true;
@@ -119,10 +117,20 @@ class App {
   }
   
   // Handle logout
-  logout() {
-    this.state.clearUser();
-    localStorage.removeItem('authToken');
-    this.router.navigate('auth');
+  async logout() {
+    try {
+      this.ui.showLoading('Logging out...');
+      await this.api.logout();
+      this.state.clearUser();
+      this.ui.hideLoading();
+      this.router.navigate('auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if the API call fails, we should still clear the local state
+      this.state.clearUser();
+      this.ui.hideLoading();
+      this.router.navigate('auth');
+    }
   }
   
   // Load application data

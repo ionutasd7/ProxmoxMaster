@@ -17,6 +17,15 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
+// API status endpoint for health check
+app.get('/api/status', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'Proxmox Manager API is running',
+    serverTime: new Date().toISOString()
+  });
+});
+
 // Configure middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));

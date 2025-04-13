@@ -90,17 +90,59 @@ export class AuthView {
     // Hide error message
     loginError.style.display = 'none';
     
-    // Attempt login
+    // Show loading indicator
+    const submitBtn = document.querySelector('#login-form button[type="submit"]');
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Logging in...';
+    
+    // Attempt login directly with fetch to diagnose the issue
     try {
-      const success = await this.app.login(username, password);
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+      });
       
-      if (!success) {
-        loginError.textContent = 'Invalid username or password';
+      // Reset button
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.user) {
+          // Store user in app state
+          this.app.state.setUser(data.user);
+          // Set auth token
+          localStorage.setItem('authToken', 'tempToken');
+          // Navigate to dashboard
+          this.app.router.navigate('dashboard');
+          return true;
+        } else {
+          loginError.textContent = 'Invalid response from server';
+          loginError.style.display = 'block';
+          return false;
+        }
+      } else {
+        const errorText = `Login failed: ${response.status} ${response.statusText}`;
+        loginError.textContent = errorText;
         loginError.style.display = 'block';
+        console.error(errorText);
+        return false;
       }
     } catch (error) {
+      // Reset button
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+      
+      // Show error
       loginError.textContent = error.message || 'Failed to login. Please try again.';
       loginError.style.display = 'block';
+      console.error('Login error:', error);
+      return false;
     }
   }
 }

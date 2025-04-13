@@ -21,7 +21,8 @@ export class API {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      credentials: 'same-origin' // Include cookies for session auth
     };
     
     // Merge options
@@ -35,14 +36,37 @@ export class API {
     console.log(`API Request: ${options.method || 'GET'} ${url}`);
     
     try {
-      const response = await fetch(url, fetchOptions);
+      // Add retry logic for better stability
+      let retries = 2;
+      let response;
+      
+      while (retries >= 0) {
+        try {
+          response = await fetch(url, fetchOptions);
+          break;
+        } catch (fetchError) {
+          if (retries <= 0) throw fetchError;
+          console.warn(`Retrying API request to ${url}, attempts remaining: ${retries}`);
+          retries--;
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
       
       // Handle non-OK responses
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const error = new Error(errorData.error || `HTTP Error: ${response.status}`);
+        let errorMessage = `HTTP Error: ${response.status}`;
+        
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // If we can't parse the error as JSON, just use the status text
+          errorMessage = `${errorMessage} ${response.statusText}`;
+        }
+        
+        const error = new Error(errorMessage);
         error.status = response.status;
-        error.data = errorData;
         throw error;
       }
       

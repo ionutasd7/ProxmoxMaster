@@ -644,43 +644,6 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
       verify_ssl: false
     };
     
-    // For development purposes only - in production, this would actually connect to Proxmox API
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    if (isDevelopment) {
-      // Simulate LXC container list with development data
-      return res.json([
-        {
-          vmid: 200,
-          name: "dev-lxc-01",
-          status: "running",
-          maxmem: 1073741824, // 1GB
-          maxcpu: 1,
-          node: dbNode.name,
-          type: "lxc"
-        },
-        {
-          vmid: 201,
-          name: "dev-lxc-02",
-          status: "stopped",
-          maxmem: 2147483648, // 2GB
-          maxcpu: 2,
-          node: dbNode.name,
-          type: "lxc"
-        },
-        {
-          vmid: 202,
-          name: "dev-lxc-03",
-          status: "running",
-          maxmem: 4294967296, // 4GB
-          maxcpu: 2,
-          node: dbNode.name,
-          type: "lxc"
-        }
-      ]);
-    }
-    
-    // Production code below - only executes in production
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
@@ -834,51 +797,6 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
       verify_ssl: false
     };
     
-    // For development purposes only - in production, this would actually connect to Proxmox API
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    if (isDevelopment) {
-      // Simulate monitoring data
-      // Generate some sample monitoring data points for the last hour
-      const now = new Date();
-      const data = [];
-      
-      // Generate data points for the last hour (60 minutes)
-      for (let i = 60; i >= 0; i--) {
-        const time = new Date(now.getTime() - (i * 60000)).getTime() / 1000; // convert to unix timestamp
-        
-        // CPU usage - varies between 5-45%
-        const cpu = 5 + Math.random() * 40;
-        
-        // Memory usage - varies between 20-80%
-        const mem = 20 + Math.random() * 60;
-        
-        // Network traffic - varies randomly
-        const netin = Math.random() * 10000000;  // bytes per second
-        const netout = Math.random() * 5000000;  // bytes per second
-        
-        // Disk IO - varies randomly
-        const diskread = Math.random() * 1000000;  // bytes per second
-        const diskwrite = Math.random() * 2000000; // bytes per second
-        
-        data.push({
-          time,
-          cpu,
-          mem,
-          netin,
-          netout,
-          diskread,
-          diskwrite
-        });
-      }
-      
-      return res.json({
-        node: node.name,
-        data: data
-      });
-    }
-    
-    // Production code below - only executes in production
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,

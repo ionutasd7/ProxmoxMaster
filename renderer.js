@@ -200,6 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
               <button class="nav-link" data-view="storage">
                 <i class="fas fa-hdd me-2"></i> Storage
               </button>
+              <button class="nav-link" data-view="templates" title="Manage VM and Container templates">
+                <i class="fas fa-clone me-2"></i> Templates
+              </button>
+              <button class="nav-link" data-view="monitoring" title="System resource monitoring">
+                <i class="fas fa-chart-line me-2"></i> Monitoring
+              </button>
               <button class="nav-link" data-view="updates">
                 <i class="fas fa-sync me-2"></i> Updates
               </button>
@@ -296,6 +302,12 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         case 'storage':
           loadStorageView();
+          break;
+        case 'templates':
+          loadTemplatesView();
+          break;
+        case 'monitoring':
+          loadMonitoringView();
           break;
         case 'updates':
           loadUpdatesView();
@@ -2575,6 +2587,947 @@ iface eth1 inet static
       
       fieldsContainer.innerHTML = fields;
     });
+  }
+  
+  // Template management view
+  function loadTemplatesView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Template Management')}
+      
+      <div class="card glow-border mb-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-clone me-2"></i> RESOURCE TEMPLATES</h5>
+        </div>
+        <div class="card-body">
+          <!-- Templates container -->
+          <div id="template-container">
+            <div class="text-center py-4">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading templates...</span>
+              </div>
+              <p class="mt-2">Loading templates...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Load templates data from server
+    loadTemplateData();
+  }
+  
+  // Function to load template data from API
+  async function loadTemplateData() {
+    try {
+      // Fetch VM templates
+      const vmResponse = await fetch('/api/templates/vm');
+      if (!vmResponse.ok) {
+        throw new Error(`Failed to fetch VM templates: ${vmResponse.statusText}`);
+      }
+      const vmTemplates = await vmResponse.json();
+      
+      // Fetch LXC templates
+      const lxcResponse = await fetch('/api/templates/lxc');
+      if (!lxcResponse.ok) {
+        throw new Error(`Failed to fetch LXC templates: ${lxcResponse.statusText}`);
+      }
+      const lxcTemplates = await lxcResponse.json();
+      
+      // Render templates
+      renderTemplates(vmTemplates, lxcTemplates);
+    } catch (error) {
+      console.error('Error loading templates:', error);
+      showNotification(`Error loading templates: ${error.message}`, 'error');
+      
+      // Show error in UI
+      const templateContainer = document.getElementById('template-container');
+      templateContainer.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="fas fa-exclamation-circle me-2"></i> Error loading templates: ${error.message}
+          <div class="mt-3">
+            <button class="btn btn-sm btn-outline-danger" onclick="loadTemplateData()">
+              <i class="fas fa-sync me-2"></i> Retry
+            </button>
+          </div>
+        </div>
+      `;
+    }
+  }
+  
+  // Function to render templates in UI
+  function renderTemplates(vmTemplates, lxcTemplates) {
+    const templateContainer = document.getElementById('template-container');
+    if (!templateContainer) return;
+    
+    templateContainer.innerHTML = `
+      <ul class="nav nav-tabs mb-4" id="templateTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="vm-templates-tab" data-bs-toggle="tab" data-bs-target="#vm-templates" 
+            type="button" role="tab" aria-controls="vm-templates" aria-selected="true">
+            <i class="fas fa-server me-2"></i> VM Templates
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="lxc-templates-tab" data-bs-toggle="tab" data-bs-target="#lxc-templates" 
+            type="button" role="tab" aria-controls="lxc-templates" aria-selected="false">
+            <i class="fas fa-box me-2"></i> LXC Templates
+          </button>
+        </li>
+      </ul>
+      
+      <div class="tab-content" id="templateTabsContent">
+        <div class="tab-pane fade show active" id="vm-templates" role="tabpanel" aria-labelledby="vm-templates-tab">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="fas fa-server me-2"></i> Virtual Machine Templates</h5>
+            <button class="btn btn-primary btn-sm" id="add-vm-template">
+              <i class="fas fa-plus me-2"></i> Add VM Template
+            </button>
+          </div>
+          
+          <div class="table-responsive">
+            <table class="table table-dark table-hover">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Profile Type</th>
+                  <th>CPU Cores</th>
+                  <th>Memory (MB)</th>
+                  <th>Disk (GB)</th>
+                  <th>Description</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="vm-templates-table">
+                ${vmTemplates.length === 0 ? 
+                  `<tr><td colspan="7" class="text-center">No VM templates found</td></tr>` : 
+                  vmTemplates.map(template => `
+                    <tr data-template-id="${template.id}">
+                      <td>${template.name}</td>
+                      <td>${template.profile_type}</td>
+                      <td>${template.cores}</td>
+                      <td>${template.memory}</td>
+                      <td>${template.disk}</td>
+                      <td>${template.template_description || ''}</td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-info edit-vm-template" data-template-id="${template.id}" title="Edit template">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-danger delete-vm-template" data-template-id="${template.id}" title="Delete template">
+                            <i class="fas fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div class="tab-pane fade" id="lxc-templates" role="tabpanel" aria-labelledby="lxc-templates-tab">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="fas fa-box me-2"></i> LXC Container Templates</h5>
+            <button class="btn btn-primary btn-sm" id="add-lxc-template">
+              <i class="fas fa-plus me-2"></i> Add LXC Template
+            </button>
+          </div>
+          
+          <div class="table-responsive">
+            <table class="table table-dark table-hover">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Profile Type</th>
+                  <th>CPU Cores</th>
+                  <th>Memory (MB)</th>
+                  <th>Swap (MB)</th>
+                  <th>Disk (GB)</th>
+                  <th>Description</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="lxc-templates-table">
+                ${lxcTemplates.length === 0 ? 
+                  `<tr><td colspan="8" class="text-center">No LXC templates found</td></tr>` : 
+                  lxcTemplates.map(template => `
+                    <tr data-template-id="${template.id}">
+                      <td>${template.name}</td>
+                      <td>${template.profile_type}</td>
+                      <td>${template.cores}</td>
+                      <td>${template.memory}</td>
+                      <td>${template.swap}</td>
+                      <td>${template.disk}</td>
+                      <td>${template.template_description || ''}</td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-info edit-lxc-template" data-template-id="${template.id}" title="Edit template">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-danger delete-lxc-template" data-template-id="${template.id}" title="Delete template">
+                            <i class="fas fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners for template actions
+    setupTemplateEventListeners();
+  }
+  
+  // Set up event listeners for template management
+  function setupTemplateEventListeners() {
+    // Add VM template button
+    const addVMTemplateBtn = document.getElementById('add-vm-template');
+    if (addVMTemplateBtn) {
+      addVMTemplateBtn.addEventListener('click', () => showVMTemplateModal());
+    }
+    
+    // Add LXC template button
+    const addLXCTemplateBtn = document.getElementById('add-lxc-template');
+    if (addLXCTemplateBtn) {
+      addLXCTemplateBtn.addEventListener('click', () => showLXCTemplateModal());
+    }
+    
+    // Edit VM template buttons
+    document.querySelectorAll('.edit-vm-template').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const templateId = e.currentTarget.dataset.templateId;
+        editVMTemplate(templateId);
+      });
+    });
+    
+    // Delete VM template buttons
+    document.querySelectorAll('.delete-vm-template').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const templateId = e.currentTarget.dataset.templateId;
+        deleteVMTemplate(templateId);
+      });
+    });
+    
+    // Edit LXC template buttons
+    document.querySelectorAll('.edit-lxc-template').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const templateId = e.currentTarget.dataset.templateId;
+        editLXCTemplate(templateId);
+      });
+    });
+    
+    // Delete LXC template buttons
+    document.querySelectorAll('.delete-lxc-template').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const templateId = e.currentTarget.dataset.templateId;
+        deleteLXCTemplate(templateId);
+      });
+    });
+  }
+  
+  // Show VM template modal for create/edit
+  function showVMTemplateModal(template = null) {
+    // Create modal HTML
+    const modalId = 'vm-template-modal';
+    const modalTitle = template ? 'Edit VM Template' : 'Add VM Template';
+    const modalAction = template ? 'update' : 'create';
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById(modalId);
+    if (existingModal) {
+      existingModal.remove();
+    }
+    
+    // Create modal element
+    const modalHTML = `
+      <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}-label" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+              <h5 class="modal-title" id="${modalId}-label">
+                <i class="fas fa-server me-2"></i> ${modalTitle}
+              </h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <form id="vm-template-form" data-action="${modalAction}" ${template ? `data-template-id="${template.id}"` : ''}>
+                <div class="mb-3">
+                  <label for="vm-template-name" class="form-label">Template Name</label>
+                  <input type="text" class="form-control" id="vm-template-name" value="${template ? template.name : ''}" required>
+                  <div class="form-text">A descriptive name for this template</div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="vm-template-profile-type" class="form-label">Profile Type</label>
+                  <input type="text" class="form-control" id="vm-template-profile-type" value="${template ? template.profile_type : ''}" required>
+                  <div class="form-text">Short identifier for this template (e.g., 'small', 'medium', 'large')</div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="vm-template-cores" class="form-label">CPU Cores</label>
+                  <input type="number" class="form-control" id="vm-template-cores" value="${template ? template.cores : '1'}" min="1" max="32" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="vm-template-memory" class="form-label">Memory (MB)</label>
+                  <input type="number" class="form-control" id="vm-template-memory" value="${template ? template.memory : '1024'}" min="512" step="512" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="vm-template-disk" class="form-label">Disk Size (GB)</label>
+                  <input type="number" class="form-control" id="vm-template-disk" value="${template ? template.disk : '10'}" min="1" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="vm-template-description" class="form-label">Description</label>
+                  <textarea class="form-control" id="vm-template-description" rows="3">${template ? template.template_description || '' : ''}</textarea>
+                  <div class="form-text">Optional description of the template's purpose or configuration</div>
+                </div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" id="save-vm-template">Save Template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add modal to document
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Initialize modal
+    const modal = new bootstrap.Modal(document.getElementById(modalId));
+    modal.show();
+    
+    // Add save event listener
+    document.getElementById('save-vm-template').addEventListener('click', async function() {
+      await saveVMTemplate();
+      modal.hide();
+    });
+  }
+  
+  // Save VM template (create or update)
+  async function saveVMTemplate() {
+    try {
+      const form = document.getElementById('vm-template-form');
+      const action = form.dataset.action;
+      const templateId = form.dataset.templateId;
+      
+      // Validate form
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      
+      // Get form data
+      const templateData = {
+        name: document.getElementById('vm-template-name').value,
+        profile_type: document.getElementById('vm-template-profile-type').value,
+        cores: parseInt(document.getElementById('vm-template-cores').value),
+        memory: parseInt(document.getElementById('vm-template-memory').value),
+        disk: parseInt(document.getElementById('vm-template-disk').value),
+        template_description: document.getElementById('vm-template-description').value
+      };
+      
+      // Create or update template
+      let url = '/api/templates/vm';
+      let method = 'POST';
+      
+      if (action === 'update') {
+        url = `/api/templates/vm/${templateId}`;
+        method = 'PUT';
+      }
+      
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(templateData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to ${action} VM template: ${response.statusText}`);
+      }
+      
+      // Show success notification
+      const actionText = action === 'create' ? 'created' : 'updated';
+      showNotification(`VM template successfully ${actionText}`, 'success');
+      
+      // Reload templates
+      loadTemplateData();
+    } catch (error) {
+      console.error('Error saving VM template:', error);
+      showNotification(`Failed to save VM template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Edit VM template
+  async function editVMTemplate(templateId) {
+    try {
+      const response = await fetch(`/api/templates/vm/${templateId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch VM template: ${response.statusText}`);
+      }
+      
+      const template = await response.json();
+      showVMTemplateModal(template);
+    } catch (error) {
+      console.error('Error editing VM template:', error);
+      showNotification(`Failed to edit VM template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Delete VM template
+  async function deleteVMTemplate(templateId) {
+    try {
+      // Show confirmation dialog
+      if (!confirm('Are you sure you want to delete this VM template? This action cannot be undone.')) {
+        return;
+      }
+      
+      const response = await fetch(`/api/templates/vm/${templateId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete VM template: ${response.statusText}`);
+      }
+      
+      // Show success notification
+      showNotification('VM template successfully deleted', 'success');
+      
+      // Reload templates
+      loadTemplateData();
+    } catch (error) {
+      console.error('Error deleting VM template:', error);
+      showNotification(`Failed to delete VM template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Show LXC template modal for create/edit
+  function showLXCTemplateModal(template = null) {
+    // Create modal HTML
+    const modalId = 'lxc-template-modal';
+    const modalTitle = template ? 'Edit LXC Template' : 'Add LXC Template';
+    const modalAction = template ? 'update' : 'create';
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById(modalId);
+    if (existingModal) {
+      existingModal.remove();
+    }
+    
+    // Create modal element
+    const modalHTML = `
+      <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}-label" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+              <h5 class="modal-title" id="${modalId}-label">
+                <i class="fas fa-box me-2"></i> ${modalTitle}
+              </h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <form id="lxc-template-form" data-action="${modalAction}" ${template ? `data-template-id="${template.id}"` : ''}>
+                <div class="mb-3">
+                  <label for="lxc-template-name" class="form-label">Template Name</label>
+                  <input type="text" class="form-control" id="lxc-template-name" value="${template ? template.name : ''}" required>
+                  <div class="form-text">A descriptive name for this template</div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-profile-type" class="form-label">Profile Type</label>
+                  <input type="text" class="form-control" id="lxc-template-profile-type" value="${template ? template.profile_type : ''}" required>
+                  <div class="form-text">Short identifier for this template (e.g., 'micro', 'small', 'medium')</div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-cores" class="form-label">CPU Cores</label>
+                  <input type="number" class="form-control" id="lxc-template-cores" value="${template ? template.cores : '1'}" min="1" max="32" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-memory" class="form-label">Memory (MB)</label>
+                  <input type="number" class="form-control" id="lxc-template-memory" value="${template ? template.memory : '512'}" min="128" step="128" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-swap" class="form-label">Swap (MB)</label>
+                  <input type="number" class="form-control" id="lxc-template-swap" value="${template ? template.swap : '0'}" min="0" step="128" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-disk" class="form-label">Disk Size (GB)</label>
+                  <input type="number" class="form-control" id="lxc-template-disk" value="${template ? template.disk : '8'}" min="1" required>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="lxc-template-description" class="form-label">Description</label>
+                  <textarea class="form-control" id="lxc-template-description" rows="3">${template ? template.template_description || '' : ''}</textarea>
+                  <div class="form-text">Optional description of the template's purpose or configuration</div>
+                </div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" id="save-lxc-template">Save Template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add modal to document
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Initialize modal
+    const modal = new bootstrap.Modal(document.getElementById(modalId));
+    modal.show();
+    
+    // Add save event listener
+    document.getElementById('save-lxc-template').addEventListener('click', async function() {
+      await saveLXCTemplate();
+      modal.hide();
+    });
+  }
+  
+  // Save LXC template (create or update)
+  async function saveLXCTemplate() {
+    try {
+      const form = document.getElementById('lxc-template-form');
+      const action = form.dataset.action;
+      const templateId = form.dataset.templateId;
+      
+      // Validate form
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      
+      // Get form data
+      const templateData = {
+        name: document.getElementById('lxc-template-name').value,
+        profile_type: document.getElementById('lxc-template-profile-type').value,
+        cores: parseInt(document.getElementById('lxc-template-cores').value),
+        memory: parseInt(document.getElementById('lxc-template-memory').value),
+        swap: parseInt(document.getElementById('lxc-template-swap').value),
+        disk: parseInt(document.getElementById('lxc-template-disk').value),
+        template_description: document.getElementById('lxc-template-description').value
+      };
+      
+      // Create or update template
+      let url = '/api/templates/lxc';
+      let method = 'POST';
+      
+      if (action === 'update') {
+        url = `/api/templates/lxc/${templateId}`;
+        method = 'PUT';
+      }
+      
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(templateData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to ${action} LXC template: ${response.statusText}`);
+      }
+      
+      // Show success notification
+      const actionText = action === 'create' ? 'created' : 'updated';
+      showNotification(`LXC template successfully ${actionText}`, 'success');
+      
+      // Reload templates
+      loadTemplateData();
+    } catch (error) {
+      console.error('Error saving LXC template:', error);
+      showNotification(`Failed to save LXC template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Edit LXC template
+  async function editLXCTemplate(templateId) {
+    try {
+      const response = await fetch(`/api/templates/lxc/${templateId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch LXC template: ${response.statusText}`);
+      }
+      
+      const template = await response.json();
+      showLXCTemplateModal(template);
+    } catch (error) {
+      console.error('Error editing LXC template:', error);
+      showNotification(`Failed to edit LXC template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Delete LXC template
+  async function deleteLXCTemplate(templateId) {
+    try {
+      // Show confirmation dialog
+      if (!confirm('Are you sure you want to delete this LXC template? This action cannot be undone.')) {
+        return;
+      }
+      
+      const response = await fetch(`/api/templates/lxc/${templateId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete LXC template: ${response.statusText}`);
+      }
+      
+      // Show success notification
+      showNotification('LXC template successfully deleted', 'success');
+      
+      // Reload templates
+      loadTemplateData();
+    } catch (error) {
+      console.error('Error deleting LXC template:', error);
+      showNotification(`Failed to delete LXC template: ${error.message}`, 'error');
+    }
+  }
+  
+  // Monitoring view
+  function loadMonitoringView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Resource Monitoring')}
+      
+      <div class="card glow-border mb-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i> SYSTEM PERFORMANCE</h5>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i> The monitoring system is being implemented. This will provide real-time charts for CPU, memory, network, and storage usage across your Proxmox infrastructure.
+          </div>
+          
+          <div class="row mt-4">
+            <div class="col-md-6 mb-4">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-microchip me-2"></i> CPU Usage</h6>
+                </div>
+                <div class="card-body">
+                  <canvas id="cpu-chart" height="200"></canvas>
+                </div>
+              </div>
+            </div>
+            
+            <div class="col-md-6 mb-4">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-memory me-2"></i> Memory Usage</h6>
+                </div>
+                <div class="card-body">
+                  <canvas id="memory-chart" height="200"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6 mb-4">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-network-wired me-2"></i> Network Traffic</h6>
+                </div>
+                <div class="card-body">
+                  <canvas id="network-chart" height="200"></canvas>
+                </div>
+              </div>
+            </div>
+            
+            <div class="col-md-6 mb-4">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="mb-0"><i class="fas fa-hdd me-2"></i> Disk I/O</h6>
+                </div>
+                <div class="card-body">
+                  <canvas id="disk-chart" height="200"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card glow-border">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-bell me-2"></i> ALERTS & NOTIFICATIONS</h5>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i> The alert system is being implemented. This will allow you to set thresholds for resource usage and receive notifications when they are exceeded.
+          </div>
+          
+          <div class="table-responsive mt-4">
+            <table class="table table-dark table-hover">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Resource</th>
+                  <th>Threshold</th>
+                  <th>Current Value</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>CPU</td>
+                  <td>Node: pve1</td>
+                  <td>80%</td>
+                  <td>45%</td>
+                  <td><span class="badge bg-success">Normal</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Memory</td>
+                  <td>Node: pve2</td>
+                  <td>90%</td>
+                  <td>87%</td>
+                  <td><span class="badge bg-warning">Warning</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Disk</td>
+                  <td>Storage: local-lvm</td>
+                  <td>95%</td>
+                  <td>96%</td>
+                  <td><span class="badge bg-danger">Critical</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Initialize charts if chart.js is loaded
+    if (typeof Chart !== 'undefined') {
+      initializeCharts();
+    } else {
+      console.warn('Chart.js is not loaded, charts will not be displayed');
+    }
+  }
+  
+  // Initialize resource monitoring charts
+  function initializeCharts() {
+    try {
+      // CPU Chart
+      const cpuCtx = document.getElementById('cpu-chart').getContext('2d');
+      const cpuChart = new Chart(cpuCtx, {
+        type: 'line',
+        data: {
+          labels: ['5m ago', '4m ago', '3m ago', '2m ago', '1m ago', 'Now'],
+          datasets: [{
+            label: 'CPU Usage %',
+            data: [25, 30, 45, 40, 35, 45],
+            borderColor: 'rgba(0, 123, 255, 1)',
+            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              ticks: {
+                callback: function(value) {
+                  return value + '%';
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      // Memory Chart
+      const memoryCtx = document.getElementById('memory-chart').getContext('2d');
+      const memoryChart = new Chart(memoryCtx, {
+        type: 'line',
+        data: {
+          labels: ['5m ago', '4m ago', '3m ago', '2m ago', '1m ago', 'Now'],
+          datasets: [{
+            label: 'Memory Usage %',
+            data: [60, 65, 70, 75, 80, 87],
+            borderColor: 'rgba(40, 167, 69, 1)',
+            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              ticks: {
+                callback: function(value) {
+                  return value + '%';
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      // Network Chart
+      const networkCtx = document.getElementById('network-chart').getContext('2d');
+      const networkChart = new Chart(networkCtx, {
+        type: 'line',
+        data: {
+          labels: ['5m ago', '4m ago', '3m ago', '2m ago', '1m ago', 'Now'],
+          datasets: [
+            {
+              label: 'In (MB/s)',
+              data: [2.5, 3.1, 4.2, 3.8, 2.9, 3.5],
+              borderColor: 'rgba(23, 162, 184, 1)',
+              backgroundColor: 'rgba(23, 162, 184, 0.1)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Out (MB/s)',
+              data: [1.8, 2.2, 2.5, 2.1, 1.9, 2.3],
+              borderColor: 'rgba(255, 193, 7, 1)',
+              backgroundColor: 'rgba(255, 193, 7, 0.1)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(value) {
+                  return value + ' MB/s';
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      // Disk Chart
+      const diskCtx = document.getElementById('disk-chart').getContext('2d');
+      const diskChart = new Chart(diskCtx, {
+        type: 'line',
+        data: {
+          labels: ['5m ago', '4m ago', '3m ago', '2m ago', '1m ago', 'Now'],
+          datasets: [
+            {
+              label: 'Read (MB/s)',
+              data: [8.2, 7.5, 9.1, 12.4, 10.8, 8.6],
+              borderColor: 'rgba(111, 66, 193, 1)',
+              backgroundColor: 'rgba(111, 66, 193, 0.1)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Write (MB/s)',
+              data: [5.1, 6.8, 7.2, 8.5, 7.9, 6.2],
+              borderColor: 'rgba(220, 53, 69, 1)',
+              backgroundColor: 'rgba(220, 53, 69, 0.1)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(value) {
+                  return value + ' MB/s';
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      // Simulate real-time updates
+      setInterval(() => {
+        // Update chart data (for demonstration purposes)
+        const newCpuValue = Math.floor(Math.random() * 30) + 30; // Random value between 30-60
+        cpuChart.data.datasets[0].data.shift();
+        cpuChart.data.datasets[0].data.push(newCpuValue);
+        cpuChart.update();
+        
+        const newMemoryValue = Math.floor(Math.random() * 15) + 75; // Random value between 75-90
+        memoryChart.data.datasets[0].data.shift();
+        memoryChart.data.datasets[0].data.push(newMemoryValue);
+        memoryChart.update();
+        
+        const newNetInValue = Math.random() * 3 + 2; // Random value between 2-5
+        const newNetOutValue = Math.random() * 2 + 1; // Random value between 1-3
+        networkChart.data.datasets[0].data.shift();
+        networkChart.data.datasets[0].data.push(newNetInValue.toFixed(1));
+        networkChart.data.datasets[1].data.shift();
+        networkChart.data.datasets[1].data.push(newNetOutValue.toFixed(1));
+        networkChart.update();
+        
+        const newDiskReadValue = Math.random() * 8 + 6; // Random value between 6-14
+        const newDiskWriteValue = Math.random() * 6 + 4; // Random value between 4-10
+        diskChart.data.datasets[0].data.shift();
+        diskChart.data.datasets[0].data.push(newDiskReadValue.toFixed(1));
+        diskChart.data.datasets[1].data.shift();
+        diskChart.data.datasets[1].data.push(newDiskWriteValue.toFixed(1));
+        diskChart.update();
+      }, 5000);
+    } catch (error) {
+      console.error('Error initializing charts:', error);
+    }
   }
   
   // Start the application with the login screen

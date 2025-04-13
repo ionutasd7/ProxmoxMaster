@@ -1,77 +1,97 @@
 /**
- * API Utility Functions
- * Contains functions for interacting with the backend API
+ * API Service
+ * Handles all API requests to the server
  */
-
-/**
- * Send a fetch request to the API
- * @param {string} url - The API endpoint URL
- * @param {Object} options - Fetch options including method, headers, and body
- * @returns {Promise<Object>} The response data
- * @throws {Error} If the request fails
- */
-async function fetchAPI(url, options = {}) {
-  try {
-    // Set default headers
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers
+export class API {
+  constructor() {
+    this.baseUrl = ''; // Empty for relative paths
+  }
+  
+  /**
+   * Send a request to the API
+   * @param {string} endpoint - API endpoint
+   * @param {Object} options - Fetch options
+   * @returns {Promise<Object>} Response data
+   */
+  async request(endpoint, options = {}) {
+    const url = `${this.baseUrl}${endpoint}`;
+    
+    // Default options
+    const defaultOptions = {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
     };
     
-    // Send the request
-    const response = await fetch(url, {
-      ...options,
-      headers
-    });
+    // Merge options
+    const fetchOptions = { ...defaultOptions, ...options };
     
-    // Check if the request was successful
-    if (!response.ok) {
-      // Try to get error message from response
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP Error ${response.status}`);
-      } catch (parseError) {
-        throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+    // Add body if present
+    if (options.body) {
+      fetchOptions.body = JSON.stringify(options.body);
+    }
+    
+    console.log(`API Request: ${options.method || 'GET'} ${url}`);
+    
+    try {
+      const response = await fetch(url, fetchOptions);
+      
+      // Handle non-OK responses
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const error = new Error(errorData.error || `HTTP Error: ${response.status}`);
+        error.status = response.status;
+        error.data = errorData;
+        throw error;
       }
+      
+      // Parse JSON response
+      const data = await response.json();
+      console.log(`API Response from ${url}:`, data);
+      return data;
+    } catch (error) {
+      console.error(`API Error (${url}):`, error);
+      throw error;
     }
-    
-    // Check if response has content
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      return await response.json();
-    }
-    
-    return { success: true };
-  } catch (error) {
-    console.error('API request failed:', error);
-    throw error;
   }
-}
-
-/**
- * API object with methods for different endpoints
- */
-const api = {
+  
   /**
-   * Authenticate user
-   * @param {string} username - User username
-   * @param {string} password - User password
+   * Get API status
+   * @returns {Promise<Object>} Status data
+   */
+  async getStatus() {
+    return this.request('/api/status');
+  }
+  
+  /**
+   * Login user
+   * @param {string} username - Username
+   * @param {string} password - Password
    * @returns {Promise<Object>} User data
    */
   async login(username, password) {
-    return fetchAPI(API.LOGIN, {
+    return this.request('/api/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password })
+      body: { username, password }
     });
-  },
+  }
+  
+  /**
+   * Get current user
+   * @returns {Promise<Object>} User data
+   */
+  async getCurrentUser() {
+    return this.request('/api/user');
+  }
   
   /**
    * Get all nodes
-   * @returns {Promise<Array>} List of nodes
+   * @returns {Promise<Array>} Nodes array
    */
   async getNodes() {
-    return fetchAPI(API.NODES);
-  },
+    return this.request('/api/nodes');
+  }
   
   /**
    * Add a new node
@@ -79,138 +99,87 @@ const api = {
    * @returns {Promise<Object>} Created node
    */
   async addNode(nodeData) {
-    return fetchAPI(API.NODES, {
+    return this.request('/api/nodes', {
       method: 'POST',
-      body: JSON.stringify(nodeData)
+      body: nodeData
     });
-  },
+  }
   
   /**
    * Delete a node
    * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Success status
+   * @returns {Promise<Object>} Status
    */
   async deleteNode(nodeId) {
-    return fetchAPI(`${API.NODES}/${nodeId}`, {
+    return this.request(`/api/nodes/${nodeId}`, {
       method: 'DELETE'
     });
-  },
+  }
   
   /**
-   * Test connection to a Proxmox API
-   * @param {Object} connectionData - Connection details
-   * @returns {Promise<Object>} Connection test result
+   * Get node details
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Object>} Node details
+   */
+  async getNodeDetails(nodeId) {
+    return this.request(`/api/nodes/${nodeId}`);
+  }
+  
+  /**
+   * Get all VMs for a specific node
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Array>} VMs array
+   */
+  async getNodeVMs(nodeId) {
+    return this.request(`/api/nodes/${nodeId}/vms`);
+  }
+  
+  /**
+   * Get all containers for a specific node
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Array>} Containers array
+   */
+  async getNodeContainers(nodeId) {
+    return this.request(`/api/nodes/${nodeId}/containers`);
+  }
+  
+  /**
+   * Get all VMs across all nodes
+   * @returns {Promise<Object>} VMs data
+   */
+  async getVMs() {
+    return this.request('/api/vms');
+  }
+  
+  /**
+   * Get all containers across all nodes
+   * @returns {Promise<Object>} Containers data
+   */
+  async getContainers() {
+    return this.request('/api/containers');
+  }
+  
+  /**
+   * Test connection to a node
+   * @param {Object} connectionData - Connection settings
+   * @returns {Promise<Object>} Connection test results
    */
   async testConnection(connectionData) {
-    return fetchAPI(API.TEST_CONNECTION, {
+    return this.request('/api/test-connection', {
       method: 'POST',
-      body: JSON.stringify(connectionData)
+      body: connectionData
     });
-  },
+  }
   
   /**
-   * Test SSH connection
-   * @param {Object} sshData - SSH connection details
-   * @returns {Promise<Object>} SSH test result
+   * Test SSH connection to a node
+   * @param {Object} sshData - SSH settings
+   * @returns {Promise<Object>} SSH test results
    */
   async testSSH(sshData) {
-    return fetchAPI(API.TEST_SSH, {
+    return this.request('/api/test-ssh', {
       method: 'POST',
-      body: JSON.stringify(sshData)
+      body: sshData
     });
-  },
-  
-  /**
-   * Get VM list for a node
-   * @param {number} nodeId - Node ID
-   * @param {string} nodeName - Node name
-   * @returns {Promise<Array>} List of VMs
-   */
-  async getVMs(nodeId, nodeName) {
-    const url = getUrl(API.VMS, { id: nodeId, nodename: nodeName });
-    return fetchAPI(url);
-  },
-  
-  /**
-   * Get container list for a node
-   * @param {number} nodeId - Node ID
-   * @param {string} nodeName - Node name
-   * @returns {Promise<Array>} List of containers
-   */
-  async getContainers(nodeId, nodeName) {
-    const url = getUrl(API.CONTAINERS, { id: nodeId, nodename: nodeName });
-    return fetchAPI(url);
-  },
-  
-  /**
-   * Get VM templates
-   * @returns {Promise<Array>} List of VM templates
-   */
-  async getVMTemplates() {
-    return fetchAPI(API.VM_TEMPLATES);
-  },
-  
-  /**
-   * Create a VM template
-   * @param {Object} templateData - Template data
-   * @returns {Promise<Object>} Created template
-   */
-  async createVMTemplate(templateData) {
-    return fetchAPI(API.VM_TEMPLATES, {
-      method: 'POST',
-      body: JSON.stringify(templateData)
-    });
-  },
-  
-  /**
-   * Delete a VM template
-   * @param {number} templateId - Template ID
-   * @returns {Promise<Object>} Success status
-   */
-  async deleteVMTemplate(templateId) {
-    return fetchAPI(`${API.VM_TEMPLATES}/${templateId}`, {
-      method: 'DELETE'
-    });
-  },
-  
-  /**
-   * Get LXC templates
-   * @returns {Promise<Array>} List of LXC templates
-   */
-  async getLXCTemplates() {
-    return fetchAPI(API.LXC_TEMPLATES);
-  },
-  
-  /**
-   * Create an LXC template
-   * @param {Object} templateData - Template data
-   * @returns {Promise<Object>} Created template
-   */
-  async createLXCTemplate(templateData) {
-    return fetchAPI(API.LXC_TEMPLATES, {
-      method: 'POST',
-      body: JSON.stringify(templateData)
-    });
-  },
-  
-  /**
-   * Delete an LXC template
-   * @param {number} templateId - Template ID
-   * @returns {Promise<Object>} Success status
-   */
-  async deleteLXCTemplate(templateId) {
-    return fetchAPI(`${API.LXC_TEMPLATES}/${templateId}`, {
-      method: 'DELETE'
-    });
-  },
-  
-  /**
-   * Get monitoring data for a node
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Monitoring data
-   */
-  async getMonitoringData(nodeId) {
-    const url = getUrl(API.MONITORING, { id: nodeId });
-    return fetchAPI(url);
   }
-};
+}

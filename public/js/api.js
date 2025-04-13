@@ -169,12 +169,38 @@ export class API {
   }
   
   /**
+   * Perform action on a VM (start, stop, restart)
+   * @param {number} nodeId - Node ID
+   * @param {number} vmId - VM ID
+   * @param {string} action - Action to perform (start, stop, restart)
+   * @returns {Promise<Object>} Action result
+   */
+  async performVMAction(nodeId, vmId, action) {
+    return this.request(`/api/nodes/${nodeId}/vms/${vmId}/${action}`, {
+      method: 'POST'
+    });
+  }
+  
+  /**
    * Get all containers for a specific node
    * @param {number} nodeId - Node ID
    * @returns {Promise<Array>} Containers array
    */
   async getNodeContainers(nodeId) {
     return this.request(`/api/nodes/${nodeId}/containers`);
+  }
+  
+  /**
+   * Perform action on a container (start, stop, restart)
+   * @param {number} nodeId - Node ID
+   * @param {number} containerId - Container ID
+   * @param {string} action - Action to perform (start, stop, restart)
+   * @returns {Promise<Object>} Action result
+   */
+  async performContainerAction(nodeId, containerId, action) {
+    return this.request(`/api/nodes/${nodeId}/containers/${containerId}/${action}`, {
+      method: 'POST'
+    });
   }
   
   /**
@@ -215,5 +241,30 @@ export class API {
       method: 'POST',
       body: sshData
     });
+  }
+  
+  /**
+   * Get node monitoring data
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Object>} Monitoring data
+   */
+  async getNodeMonitoring(nodeId) {
+    return this.request(`/api/monitoring/node/${nodeId}`);
+  }
+  
+  /**
+   * Get VM templates
+   * @returns {Promise<Array>} VM templates
+   */
+  async getVMTemplates() {
+    return this.request('/api/templates/vm');
+  }
+  
+  /**
+   * Get LXC templates
+   * @returns {Promise<Array>} LXC templates
+   */
+  async getLXCTemplates() {
+    return this.request('/api/templates/lxc');
   }
 }

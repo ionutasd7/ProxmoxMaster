@@ -3,7 +3,8 @@
  * Handles communication with the Proxmox API
  */
 
-import axios from 'axios';
+const axios = require('axios');
+const https = require('https');
 
 class ProxmoxService {
   constructor() {

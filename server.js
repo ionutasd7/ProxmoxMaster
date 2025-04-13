@@ -1,20 +1,238 @@
-// Simple server to serve the application in development mode
+// Simple server for Proxmox Infrastructure Manager
 const express = require('express');
 const path = require('path');
 
+// Create Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Serve static files
+// Middleware
 app.use(express.static(path.join(__dirname, '.')));
+app.use(express.json());
 
-// Handle API requests
+// API status endpoint
 app.get('/api/status', (req, res) => {
   res.json({ status: 'ok', message: 'Proxmox Manager API is running' });
 });
 
-// Serve the main HTML file for root path only
-app.get('/', (req, res) => {
+// API Authentication endpoint - accepts any credentials for demo purposes
+app.post('/api/auth', (req, res) => {
+  try {
+    const { host, username, password } = req.body;
+    
+    // Log authentication attempt
+    console.log(`Authentication attempt: ${username} connecting to ${host}`);
+    
+    // Simulate successful auth
+    const authData = {
+      host,
+      username,
+      ticket: 'PVE:demo-ticket',
+      CSRFPreventionToken: 'demo-csrf-token',
+      timestamp: new Date().getTime()
+    };
+    
+    res.json({ success: true, authData });
+  } catch (error) {
+    console.error('Auth error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Nodes data endpoint
+app.get('/api/nodes', (req, res) => {
+  // Return sample nodes data
+  res.json({
+    success: true,
+    nodes: [
+      {
+        name: 'pve1',
+        status: 'online',
+        uptime: 2592000, // 30 days in seconds
+        cpu: { cores: 8, usage: 0.21 },
+        memory: { total: 32768, used: 13762 }, // In MB
+        disk: { total: 3072, used: 1997 } // In GB
+      },
+      {
+        name: 'pve2',
+        status: 'online',
+        uptime: 1296000, // 15 days in seconds
+        cpu: { cores: 16, usage: 0.35 },
+        memory: { total: 65536, used: 28672 }, // In MB
+        disk: { total: 5120, used: 3277 } // In GB
+      },
+      {
+        name: 'pve3',
+        status: 'online',
+        uptime: 864000, // 10 days in seconds
+        cpu: { cores: 8, usage: 0.15 },
+        memory: { total: 32768, used: 8192 }, // In MB
+        disk: { total: 2048, used: 1126 } // In GB
+      }
+    ]
+  });
+});
+
+// VM data endpoint
+app.get('/api/vms', (req, res) => {
+  res.json({
+    success: true,
+    vms: [
+      {
+        id: 101,
+        name: 'web-server',
+        status: 'running',
+        node: 'pve1',
+        cpu: { cores: 2, usage: 0.15 },
+        memory: { total: 4096, used: 2150 }, // In MB
+        disk: { total: 32, used: 18.5 } // In GB
+      },
+      {
+        id: 102,
+        name: 'db-server',
+        status: 'running',
+        node: 'pve2',
+        cpu: { cores: 4, usage: 0.45 },
+        memory: { total: 16384, used: 12689 }, // In MB
+        disk: { total: 100, used: 76.2 } // In GB
+      },
+      {
+        id: 103,
+        name: 'mail-server',
+        status: 'stopped',
+        node: 'pve1',
+        cpu: { cores: 2, usage: 0 },
+        memory: { total: 4096, used: 0 }, // In MB
+        disk: { total: 50, used: 23.7 } // In GB
+      }
+    ]
+  });
+});
+
+// Container data endpoint
+app.get('/api/containers', (req, res) => {
+  res.json({
+    success: true,
+    containers: [
+      {
+        id: 201,
+        name: 'nginx-proxy',
+        status: 'running',
+        node: 'pve1',
+        cpu: { cores: 1, usage: 0.08 },
+        memory: { total: 1024, used: 512 }, // In MB
+        disk: { total: 8, used: 3.2 }, // In GB
+        ip: '10.10.10.201'
+      },
+      {
+        id: 202,
+        name: 'redis-cache',
+        status: 'running',
+        node: 'pve2',
+        cpu: { cores: 2, usage: 0.24 },
+        memory: { total: 4096, used: 3174 }, // In MB
+        disk: { total: 16, used: 7.8 }, // In GB
+        ip: '10.10.10.202'
+      },
+      {
+        id: 203,
+        name: 'monitoring',
+        status: 'running',
+        node: 'pve3',
+        cpu: { cores: 2, usage: 0.15 },
+        memory: { total: 2048, used: 1536 }, // In MB
+        disk: { total: 20, used: 12.4 }, // In GB
+        ip: '10.10.10.203'
+      },
+      {
+        id: 204,
+        name: 'dev-env',
+        status: 'stopped',
+        node: 'pve2',
+        cpu: { cores: 2, usage: 0 },
+        memory: { total: 4096, used: 0 }, // In MB
+        disk: { total: 30, used: 18.6 }, // In GB
+        ip: '10.10.10.204'
+      }
+    ]
+  });
+});
+
+// Network data endpoint
+app.get('/api/network', (req, res) => {
+  res.json({
+    success: true,
+    interfaces: [
+      {
+        name: 'eth0',
+        node: 'pve1',
+        ip: '10.55.1.10',
+        netmask: '255.255.255.0',
+        mac: '00:1A:2B:3C:4D:5E',
+        status: 'up',
+        trafficIn: '4.5 MB/s',
+        trafficOut: '2.8 MB/s'
+      },
+      {
+        name: 'eth1',
+        node: 'pve1',
+        ip: '192.168.1.10',
+        netmask: '255.255.255.0',
+        mac: '00:1A:2B:3C:4D:5F',
+        status: 'up',
+        trafficIn: '1.2 MB/s',
+        trafficOut: '0.8 MB/s'
+      },
+      {
+        name: 'eth0',
+        node: 'pve2',
+        ip: '10.55.1.11',
+        netmask: '255.255.255.0',
+        mac: '00:2B:3C:4D:5E:6F',
+        status: 'up',
+        trafficIn: '3.8 MB/s',
+        trafficOut: '2.1 MB/s'
+      },
+      {
+        name: 'eth0',
+        node: 'pve3',
+        ip: '10.55.1.12',
+        netmask: '255.255.255.0',
+        mac: '00:3C:4D:5E:6F:7G',
+        status: 'up',
+        trafficIn: '2.5 MB/s',
+        trafficOut: '1.7 MB/s'
+      }
+    ]
+  });
+});
+
+// Updates data endpoint
+app.get('/api/updates', (req, res) => {
+  res.json({
+    success: true,
+    updates: {
+      node: [
+        { package: 'pve-kernel-5.15', currentVersion: '5.15.102-1', newVersion: '5.15.107-1', priority: 'security', type: 'Kernel' },
+        { package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security', type: 'System' },
+        { package: 'qemu-server', currentVersion: '7.2.0-3', newVersion: '7.2.0-5', priority: 'important', type: 'System' }
+      ],
+      vms: [
+        { id: 101, name: 'web-server', status: 'running', package: 'linux-image-generic', currentVersion: '5.15.0-78', newVersion: '5.15.0-82', priority: 'security' },
+        { id: 101, name: 'web-server', status: 'running', package: 'openssl', currentVersion: '3.0.2-0ubuntu1.9', newVersion: '3.0.2-0ubuntu1.10', priority: 'security' },
+        { id: 102, name: 'db-server', status: 'running', package: 'mysql-server', currentVersion: '8.0.32-0ubuntu0.22.04.2', newVersion: '8.0.34-0ubuntu0.22.04.1', priority: 'important' }
+      ],
+      containers: [
+        { id: 201, name: 'nginx-proxy', status: 'running', package: 'nginx', currentVersion: '1.22.1-1~bookworm', newVersion: '1.24.0-2~bookworm', priority: 'important' },
+        { id: 201, name: 'nginx-proxy', status: 'running', package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security' },
+        { id: 202, name: 'redis-cache', status: 'running', package: 'redis-server', currentVersion: '6:7.0.11-1~deb12u1', newVersion: '6:7.0.15-1~deb12u1', priority: 'security' }
+      ]
+    }
+  });
+});
+
+// Serve the main HTML file for all other paths
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 

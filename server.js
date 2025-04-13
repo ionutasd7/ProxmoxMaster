@@ -34,6 +34,11 @@ app.get('/api/status', (req, res) => {
   res.json({ status: 'ok', message: 'Proxmox Manager API is running' });
 });
 
+// Serve test.html for API testing
+app.get('/test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test.html'));
+});
+
 // API Authentication endpoint - accepts any credentials for demo purposes
 app.post('/api/auth', (req, res) => {
   try {

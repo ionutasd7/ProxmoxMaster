@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Proxmox Manager Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+    }
+    .btn {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 15px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-left: 4px solid #4CAF50;
+    }
+    pre {
+      overflow-x: auto;
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Proxmox Manager API Tests</h1>
+    
+    <h2>Get Nodes</h2>
+    <button id="getNodesBtn" class="btn">Get All Nodes</button>
+    <div id="nodesResult" class="result">Results will appear here...</div>
+    
+    <h2>Add Test Node</h2>
+    <button id="addNodeBtn" class="btn">Add Test Node</button>
+    <div id="addNodeResult" class="result">Results will appear here...</div>
+
+    <h2>Get VMs</h2>
+    <button id="getVMsBtn" class="btn">Get All VMs</button>
+    <div id="vmsResult" class="result">Results will appear here...</div>
+    
+    <h2>Get Containers</h2>
+    <button id="getContainersBtn" class="btn">Get All Containers</button>
+    <div id="containersResult" class="result">Results will appear here...</div>
+    
+    <h2>Get Network</h2>
+    <button id="getNetworkBtn" class="btn">Get Network Data</button>
+    <div id="networkResult" class="result">Results will appear here...</div>
+    
+    <h2>Get Updates</h2>
+    <button id="getUpdatesBtn" class="btn">Get Updates Data</button>
+    <div id="updatesResult" class="result">Results will appear here...</div>
+  </div>
+
+  <script>
+    // Helper function to format JSON response
+    function formatResponse(data) {
+      return JSON.stringify(data, null, 2);
+    }
+    
+    // Get Nodes
+    document.getElementById('getNodesBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('nodesResult');
+      resultDiv.innerHTML = 'Loading...';
+      
+      try {
+        const response = await fetch('/api/nodes');
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Add Test Node
+    document.getElementById('addNodeBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('addNodeResult');
+      resultDiv.innerHTML = 'Adding test node...';
+      
+      const testNode = {
+        name: 'test-node-' + Math.floor(Math.random() * 1000),
+        hostname: 'test.example.com',
+        username: 'test-api-user', 
+        password: 'test-password',
+        port: 8006,
+        ssl_verify: false
+      };
+      
+      try {
+        const response = await fetch('/api/nodes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(testNode)
+        });
+        
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Get VMs
+    document.getElementById('getVMsBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('vmsResult');
+      resultDiv.innerHTML = 'Loading...';
+      
+      try {
+        const response = await fetch('/api/vms');
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Get Containers
+    document.getElementById('getContainersBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('containersResult');
+      resultDiv.innerHTML = 'Loading...';
+      
+      try {
+        const response = await fetch('/api/containers');
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Get Network
+    document.getElementById('getNetworkBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('networkResult');
+      resultDiv.innerHTML = 'Loading...';
+      
+      try {
+        const response = await fetch('/api/network');
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Get Updates
+    document.getElementById('getUpdatesBtn').addEventListener('click', async () => {
+      const resultDiv = document.getElementById('updatesResult');
+      resultDiv.innerHTML = 'Loading...';
+      
+      try {
+        const response = await fetch('/api/updates');
+        const data = await response.json();
+        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>

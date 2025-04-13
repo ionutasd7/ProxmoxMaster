@@ -18,6 +18,9 @@ export class DashboardView {
     // Get current state
     const { nodes, vms, containers } = this.app.state.getState();
     
+    // For demo purposes, ensure we always show the charts
+    let showDemoCharts = true;
+    
     // Set main content
     mainContent.innerHTML = `
       ${this.app.ui.createPageHeader('Cluster Dashboard', 'chart-line')}

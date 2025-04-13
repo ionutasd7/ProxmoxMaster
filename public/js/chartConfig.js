@@ -23,13 +23,19 @@ function configureChartDefaults() {
     // Configure legend
     Chart.defaults.plugins.legend.labels.color = 'rgb(240, 240, 240)';
     
-    // Grid line settings
-    Chart.defaults.scales.x.grid.color = 'rgba(255, 255, 255, 0.1)';
-    Chart.defaults.scales.y.grid.color = 'rgba(255, 255, 255, 0.1)';
-    
-    // Tick settings
-    Chart.defaults.scales.x.ticks.color = 'rgb(200, 200, 200)';
-    Chart.defaults.scales.y.ticks.color = 'rgb(200, 200, 200)';
+    // We need to check if these properties exist before setting them
+    if (Chart.defaults.scales) {
+      // Grid line settings
+      if (Chart.defaults.scales.x) {
+        Chart.defaults.scales.x.grid.color = 'rgba(255, 255, 255, 0.1)';
+        Chart.defaults.scales.x.ticks.color = 'rgb(200, 200, 200)';
+      }
+      
+      if (Chart.defaults.scales.y) {
+        Chart.defaults.scales.y.grid.color = 'rgba(255, 255, 255, 0.1)';
+        Chart.defaults.scales.y.ticks.color = 'rgb(200, 200, 200)';
+      }
+    }
     
     console.log('Chart.js configured with dark theme defaults');
   } else {

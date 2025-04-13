@@ -748,28 +748,54 @@ export class DashboardView {
   initializeCharts(nodes) {
     if (nodes.length === 0) return;
     
+    // Only initialize charts with actual node data
     setTimeout(() => {
-      this.initCPUChart();
-      this.initMemoryChart();
-      this.initStorageChart();
-      this.initNetworkChart();
+      // Get aggregate node monitoring data
+      this.fetchNodesMonitoringData(nodes).then(monitoringData => {
+        if (monitoringData && monitoringData.length > 0) {
+          this.initCPUChart(monitoringData);
+          this.initMemoryChart(monitoringData);
+          this.initStorageChart(monitoringData);
+          this.initNetworkChart(monitoringData);
+        }
+      });
     }, 100);
   }
   
   /**
-   * Initialize CPU chart
+   * Fetch monitoring data for all nodes
+   * @param {Array} nodes - Nodes
+   * @returns {Promise<Array>} Monitoring data
    */
-  initCPUChart() {
+  async fetchNodesMonitoringData(nodes) {
+    try {
+      // Fetch monitoring data for each node
+      const monitoringPromises = nodes.map(node => this.app.api.getNodeMonitoring(node.id));
+      const monitoringResults = await Promise.all(monitoringPromises);
+      
+      // Filter out failed requests
+      return monitoringResults.filter(result => result && !result.error);
+    } catch (error) {
+      console.error('Failed to fetch nodes monitoring data:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * Initialize CPU chart with real data
+   * @param {Array} monitoringData - Node monitoring data
+   */
+  initCPUChart(monitoringData) {
     const ctx = document.getElementById('cpu-chart');
     if (!ctx) return;
     
-    // Sample data for demonstration
+    // Prepare data for CPU usage percentage
     const data = {
-      labels: this.generateTimeLabels(24),
+      labels: monitoringData.map(node => node.name || `Node ${node.id}`),
       datasets: [
         {
           label: 'Average CPU Usage',
-          data: this.generateRandomData(24, 10, 60),
+          data: monitoringData.map(node => node.cpu ? node.cpu.usage || 0 : 0),
           borderColor: '#8257e6',
           backgroundColor: 'rgba(130, 87, 230, 0.1)',
           fill: true,
@@ -780,7 +806,7 @@ export class DashboardView {
     };
     
     const config = {
-      type: 'line',
+      type: 'bar',
       data,
       options: this.getChartOptions('CPU Usage (%)')
     };
@@ -789,19 +815,20 @@ export class DashboardView {
   }
   
   /**
-   * Initialize memory chart
+   * Initialize memory chart with real data
+   * @param {Array} monitoringData - Node monitoring data
    */
-  initMemoryChart() {
+  initMemoryChart(monitoringData) {
     const ctx = document.getElementById('memory-chart');
     if (!ctx) return;
     
-    // Sample data for demonstration
+    // Prepare data for memory usage percentage
     const data = {
-      labels: this.generateTimeLabels(24),
+      labels: monitoringData.map(node => node.name || `Node ${node.id}`),
       datasets: [
         {
           label: 'Average Memory Usage',
-          data: this.generateRandomData(24, 30, 80),
+          data: monitoringData.map(node => node.memory ? node.memory.usagePercent || 0 : 0),
           borderColor: '#53c986',
           backgroundColor: 'rgba(83, 201, 134, 0.1)',
           fill: true,
@@ -821,18 +848,30 @@ export class DashboardView {
   }
   
   /**
-   * Initialize storage chart
+   * Initialize storage chart with real data
+   * @param {Array} monitoringData - Node monitoring data
    */
-  initStorageChart() {
+  initStorageChart(monitoringData) {
     const ctx = document.getElementById('storage-chart');
     if (!ctx) return;
     
-    // Sample data for demonstration
+    // Calculate aggregate storage data
+    let totalFree = 0;
+    let totalUsed = 0;
+    
+    // Use real data if available, otherwise display empty chart
+    monitoringData.forEach(node => {
+      if (node.storage) {
+        totalFree += node.storage.free || 0;
+        totalUsed += node.storage.used || 0;
+      }
+    });
+    
     const data = {
       labels: ['Free', 'Used'],
       datasets: [
         {
-          data: [30, 70],
+          data: [totalFree, totalUsed],
           backgroundColor: ['#53c986', '#ff5252'],
           hoverOffset: 4,
           borderWidth: 1,

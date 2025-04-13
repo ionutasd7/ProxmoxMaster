@@ -47,24 +47,28 @@ export class UI {
     
     return `
       <div class="sidebar-header">
-        <h3>Proxmox Manager</h3>
+        <div class="logo">
+          <i class="fas fa-cube logo-icon"></i>
+          <span>Proxmox Manager</span>
+        </div>
       </div>
       
-      <div class="sidebar-user py-2 px-3 border-bottom border-dark">
+      <div class="p-3 mb-2 border-bottom" style="border-color: var(--divider) !important;">
         <div class="d-flex align-items-center">
-          <i class="fas fa-user-circle me-2 text-primary" style="font-size: 1.5rem;"></i>
-          <div>
-            <div class="text-white">${user?.username || 'User'}</div>
-            <small class="text-muted">${user?.email || ''}</small>
+          <div class="rounded-circle bg-gradient" style="width: 40px; height: 40px; background: linear-gradient(45deg, var(--accent-primary), var(--accent-tertiary)); display: flex; align-items: center; justify-content: center;">
+            <i class="fas fa-user text-white"></i>
+          </div>
+          <div class="ms-3">
+            <div class="fw-medium">${user?.username || 'User'}</div>
+            <small class="text-muted">${user?.email || 'Administrator'}</small>
           </div>
         </div>
       </div>
       
       <div class="sidebar-nav">
-        <div class="nav-category">Overview</div>
         <div class="nav-item">
-          <a href="#" class="nav-link active" data-route="dashboard">
-            <i class="fas fa-tachometer-alt"></i>
+          <a href="#" class="nav-link" data-route="dashboard">
+            <i class="fas fa-chart-line"></i>
             Dashboard
           </a>
         </div>
@@ -75,7 +79,10 @@ export class UI {
           </a>
         </div>
         
-        <div class="nav-category">Virtualization</div>
+        <div class="px-4 mt-4 mb-2">
+          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">Virtualization</span>
+        </div>
+        
         <div class="nav-item">
           <a href="#" class="nav-link" data-route="vms">
             <i class="fas fa-desktop"></i>
@@ -89,7 +96,10 @@ export class UI {
           </a>
         </div>
         
-        <div class="nav-category">Management</div>
+        <div class="px-4 mt-4 mb-2">
+          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">Management</span>
+        </div>
+        
         <div class="nav-item">
           <a href="#" class="nav-link" data-route="storage">
             <i class="fas fa-hdd"></i>
@@ -109,7 +119,10 @@ export class UI {
           </a>
         </div>
         
-        <div class="nav-category">Settings</div>
+        <div class="px-4 mt-4 mb-2">
+          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">System</span>
+        </div>
+        
         <div class="nav-item">
           <a href="#" class="nav-link" data-route="settings">
             <i class="fas fa-cog"></i>
@@ -137,15 +150,11 @@ export class UI {
     // Create loading overlay
     const loadingOverlay = document.createElement('div');
     loadingOverlay.id = 'loading-overlay';
-    loadingOverlay.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center';
-    loadingOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    loadingOverlay.style.zIndex = '9999';
+    loadingOverlay.className = 'loader-overlay';
     loadingOverlay.innerHTML = `
       <div class="text-center">
-        <div class="spinner-border text-primary mb-3" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-        <div class="text-white">${message}</div>
+        <div class="loader"></div>
+        <div class="loader-message">${message}</div>
       </div>
     `;
     
@@ -200,31 +209,39 @@ export class UI {
     // Create notification
     const notification = document.createElement('div');
     notification.id = 'notification';
-    notification.className = `alert alert-${type} position-fixed`;
-    notification.style.top = '20px';
-    notification.style.right = '20px';
-    notification.style.maxWidth = '400px';
-    notification.style.zIndex = '9999';
+    notification.className = `notification ${type}`;
+    
+    // Icon based on type
+    let iconClass = 'info-circle';
+    if (type === 'success') iconClass = 'check-circle';
+    if (type === 'danger') iconClass = 'exclamation-circle';
+    if (type === 'warning') iconClass = 'exclamation-triangle';
+    
     notification.innerHTML = `
-      <div class="d-flex align-items-center">
-        <div class="me-3">
-          <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-circle' : 'info-circle'} fa-2x"></i>
-        </div>
-        <div>
-          ${title ? `<strong>${title}</strong><br>` : ''}
-          ${message}
-        </div>
-        <button type="button" class="btn-close ms-auto" aria-label="Close"></button>
+      <div class="notification-icon">
+        <i class="fas fa-${iconClass}"></i>
+      </div>
+      <div class="notification-content">
+        ${title ? `<div class="notification-title">${title}</div>` : ''}
+        <div class="notification-message">${message}</div>
+      </div>
+      <div class="notification-close">
+        <i class="fas fa-times"></i>
       </div>
     `;
     
     // Add event listener to close button
-    notification.querySelector('.btn-close').addEventListener('click', () => {
+    notification.querySelector('.notification-close').addEventListener('click', () => {
       this.hideNotification();
     });
     
     // Append to body
     document.body.appendChild(notification);
+    
+    // Add show class after a slight delay (for animation)
+    setTimeout(() => {
+      notification.classList.add('show');
+    }, 10);
     
     // Auto-hide after 5 seconds
     setTimeout(() => {
@@ -250,11 +267,14 @@ export class UI {
    */
   createPageHeader(title, icon = 'cube') {
     return `
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0"><i class="fas fa-${icon} me-2"></i> ${title}</h1>
+      <div class="d-flex justify-content-between align-items-center mb-4 fade-in">
+        <div>
+          <h2 class="mb-0 fw-bold"><i class="fas fa-${icon} me-2 text-primary"></i> ${title}</h2>
+          <p class="text-muted mb-0 mt-1">Manage your Proxmox infrastructure</p>
+        </div>
         <div class="d-flex align-items-center">
-          <button id="refresh-btn" class="btn btn-outline-primary me-2" title="Refresh data">
-            <i class="fas fa-sync"></i> Refresh
+          <button id="refresh-btn" class="btn btn-primary rounded-pill shadow-sm" title="Refresh data">
+            <i class="fas fa-sync-alt me-2"></i> Refresh
           </button>
         </div>
       </div>
@@ -270,10 +290,12 @@ export class UI {
    */
   createCard(title, content, icon = null) {
     return `
-      <div class="custom-card">
-        <div class="card-header">
-          ${icon ? `<i class="fas fa-${icon} me-2"></i>` : ''}
-          ${title}
+      <div class="card mb-4 slide-in">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            ${icon ? `<i class="fas fa-${icon} me-2 text-primary"></i>` : ''}
+            ${title}
+          </h5>
         </div>
         <div class="card-body">
           ${content}
@@ -316,7 +338,7 @@ export class UI {
    * @returns {string} Badge HTML
    */
   getStatusBadge(status) {
-    let badgeClass = 'status-pending';
+    let badgeClass = 'bg-secondary';
     let icon = 'question-circle';
     
     // Determine badge type based on status
@@ -324,14 +346,46 @@ export class UI {
       const lowerStatus = status.toLowerCase();
       
       if (lowerStatus.includes('running') || lowerStatus === 'up' || lowerStatus === 'online') {
-        badgeClass = 'status-running';
+        badgeClass = 'bg-success';
         icon = 'check-circle';
       } else if (lowerStatus.includes('stopped') || lowerStatus === 'down' || lowerStatus === 'offline') {
-        badgeClass = 'status-stopped';
+        badgeClass = 'bg-danger';
         icon = 'times-circle';
+      } else if (lowerStatus.includes('pause') || lowerStatus.includes('suspend')) {
+        badgeClass = 'bg-warning';
+        icon = 'pause-circle';
       }
     }
     
-    return `<span class="status-badge ${badgeClass}"><i class="fas fa-${icon} me-1"></i> ${status}</span>`;
+    return `<span class="badge ${badgeClass} rounded-pill"><i class="fas fa-${icon} me-1"></i> ${status}</span>`;
+  }
+  
+  /**
+   * Create resource usage meter
+   * @param {number} usedPercent - Used percentage (0-100)
+   * @param {string} label - Resource label
+   * @param {string} value - Current value text
+   * @returns {string} Resource meter HTML
+   */
+  createResourceMeter(usedPercent, label, value) {
+    let meterClass = 'resource-meter-low';
+    
+    if (usedPercent > 80) {
+      meterClass = 'resource-meter-high';
+    } else if (usedPercent > 60) {
+      meterClass = 'resource-meter-medium';
+    }
+    
+    return `
+      <div class="mb-3">
+        <div class="resource-label mb-1">
+          <span>${label}</span>
+          <span>${value}</span>
+        </div>
+        <div class="resource-meter">
+          <div class="resource-meter-fill ${meterClass}" style="width: ${usedPercent}%"></div>
+        </div>
+      </div>
+    `;
   }
 }

@@ -26,6 +26,18 @@ export class Router {
         this.app.loadAppData();
         this.app.views.containers.render();
       },
+      'storage': () => {
+        this.app.loadAppData();
+        this.app.views.storage.render();
+      },
+      'network': () => {
+        this.app.loadAppData();
+        this.app.views.network.render();
+      },
+      'updates': () => {
+        this.app.loadAppData();
+        this.app.views.updates.render();
+      },
       'settings': () => {
         this.app.views.settings.render();
       },

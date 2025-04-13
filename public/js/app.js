@@ -10,6 +10,7 @@ import { VMsView } from './views/vms.js';
 import { ContainersView } from './views/containers.js';
 import { StorageView } from './views/storage.js';
 import { NetworkView } from './views/network.js';
+import { UpdatesView } from './views/updates.js';
 import { SettingsView } from './views/settings.js';
 
 // Main Application Class
@@ -41,6 +42,9 @@ class App {
       nodes: new NodesView(this),
       vms: new VMsView(this),
       containers: new ContainersView(this),
+      storage: new StorageView(this),
+      network: new NetworkView(this),
+      updates: new UpdatesView(this),
       settings: new SettingsView(this)
     };
   }

@@ -28,12 +28,49 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 const app = express();
 const port = process.env.PORT || 5000;
 
+// Configure middleware - IMPORTANT: This must come before route definitions
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Add session middleware - IMPORTANT: This must come before route definitions
+const session = require('express-session');
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'proxmox-manager-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 24 // 24 hours
+  }
+}));
+
 // API status endpoint for health check
 app.get('/api/status', (req, res) => {
   res.status(200).json({ 
     status: 'ok', 
     message: 'Proxmox Manager API is running',
     serverTime: new Date().toISOString()
+  });
+});
+
+// Get current user from session
+app.get('/api/user', (req, res) => {
+  if (req.session && req.session.isAuthenticated && req.session.user) {
+    res.json({ user: req.session.user });
+  } else {
+    res.status(401).json({ error: 'Not authenticated' });
+  }
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err);
+      return res.status(500).json({ error: 'Failed to logout' });
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
   });
 });
 
@@ -51,11 +88,6 @@ app.get('/api/containers', (req, res) => {
     containers: [] // Initially empty, will be populated when nodes are added
   });
 });
-
-// Configure middleware
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection
 const pool = new Pool({
@@ -151,6 +183,27 @@ async function initializeDatabase() {
       `);
       console.log('LXC templates table created');
     }
+    
+    // Check if nodes table exists, create if it doesn't
+    try {
+      await pool.query('SELECT COUNT(*) FROM nodes');
+    } catch (err) {
+      // Nodes table doesn't exist, create it
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS nodes (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          hostname VARCHAR(255) NOT NULL,
+          port INTEGER DEFAULT 8006,
+          username VARCHAR(100) NOT NULL,
+          password VARCHAR(255) NOT NULL,
+          ssl_verify BOOLEAN DEFAULT false,
+          node_status VARCHAR(50) DEFAULT 'unknown',
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `);
+      console.log('Nodes table created');
+    }
 
     console.log('Database initialization complete');
   } catch (err) {
@@ -183,8 +236,12 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // Remove password from response
+    // Remove password from user object
     delete user.password;
+    
+    // Store user in session
+    req.session.user = user;
+    req.session.isAuthenticated = true;
     
     res.json({ user });
   } catch (err) {

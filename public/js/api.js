@@ -110,6 +110,16 @@ export class API {
   }
   
   /**
+   * Logout user
+   * @returns {Promise<Object>} Logout status
+   */
+  async logout() {
+    return this.request('/api/logout', {
+      method: 'POST'
+    });
+  }
+  
+  /**
    * Get all nodes
    * @returns {Promise<Array>} Nodes array
    */

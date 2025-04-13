@@ -17,17 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
           <form id="login-form">
             <div class="mb-4">
               <label for="host" class="form-label">Proxmox Host</label>
-              <input type="text" class="form-control" id="host" value="pve.ionutlab.com" required>
+              <input type="text" class="form-control" id="host" placeholder="Enter hostname or IP address" required>
               <div class="form-text">Hostname or IP of your Proxmox server</div>
             </div>
             <div class="mb-4">
               <label for="username" class="form-label">Username</label>
-              <input type="text" class="form-control" id="username" value="api@pam!home" required>
+              <input type="text" class="form-control" id="username" placeholder="Enter username (e.g., user@pam)" required>
               <div class="form-text">API user with sufficient privileges</div>
             </div>
             <div class="mb-4">
               <label for="password" class="form-label">Password</label>
-              <input type="password" class="form-control" id="password" value="8cd15ef7-d25b-4955-9c32-48d42e23b109" required>
+              <input type="password" class="form-control" id="password" placeholder="Enter password" required>
             </div>
             <div class="d-grid">
               <button type="submit" class="btn btn-primary">

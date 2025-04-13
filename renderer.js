@@ -746,8 +746,8 @@ document.addEventListener('DOMContentLoaded', () => {
                   <h5 class="mb-0">
                     <i class="fas fa-server me-2"></i> ${node.name}
                   </h5>
-                  <span class="badge bg-${node.status === 'connected' ? 'success' : 'danger'}">
-                    ${node.status === 'connected' ? 'ONLINE' : 'OFFLINE'}
+                  <span class="badge bg-${node.node_status === 'connected' || node.node_status === 'online' ? 'success' : 'danger'}">
+                    ${node.node_status === 'connected' || node.node_status === 'online' ? 'ONLINE' : 'OFFLINE'}
                   </span>
                 </div>
                 <div class="card-body">
@@ -755,13 +755,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <strong>Hostname:</strong> ${node.hostname}:${node.port}
                   </div>
                   <div class="mb-3">
-                    <strong>API User:</strong> ${node.apiUsername}
+                    <strong>API User:</strong> ${node.username}
                   </div>
                   <div class="mb-3">
-                    <strong>SSH User:</strong> ${node.sshUsername}
+                    <strong>SSH User:</strong> ${node.ssh_username || 'Not configured'}
                   </div>
                   <div class="mb-3">
-                    <strong>Last Connected:</strong> ${node.lastConnected ? node.lastConnected.toLocaleString() : 'Never'}
+                    <strong>Last Connected:</strong> ${node.last_seen ? new Date(node.last_seen).toLocaleString() : 'Never'}
                   </div>
                   
                   <div class="row mt-4">
@@ -810,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.querySelectorAll('[data-action="fetch-vms"]').forEach(button => {
-      button.addEventListener('click', (e) => {
+      button.addEventListener('click', async (e) => {
         const nodeId = parseInt(e.currentTarget.dataset.nodeId);
         const node = state.nodes.find(n => n.id === nodeId);
         if (node) {
@@ -818,11 +818,24 @@ document.addEventListener('DOMContentLoaded', () => {
           e.currentTarget.innerHTML = '<i class="fas fa-sync fa-spin me-2"></i> Fetching...';
           e.currentTarget.disabled = true;
           
-          // Simulate API call
-          setTimeout(() => {
-            // Randomly generate between 1-5 VMs and 1-5 containers for this demo
-            const vmsCount = Math.floor(Math.random() * 5) + 1;
-            const containersCount = Math.floor(Math.random() * 5) + 1;
+          try {
+            // Make real API calls to fetch VMs and containers
+            const [vmsResponse, containersResponse] = await Promise.all([
+              fetchData('/api/vms'),
+              fetchData('/api/containers')
+            ]);
+            
+            let vmsCount = 0;
+            let containersCount = 0;
+            
+            // Count VMs and containers for this node
+            if (vmsResponse.success) {
+              vmsCount = vmsResponse.vms.filter(vm => vm.node === node.name).length;
+            }
+            
+            if (containersResponse.success) {
+              containersCount = containersResponse.containers.filter(ct => ct.node === node.name).length;
+            }
             
             // Update button text
             e.currentTarget.innerHTML = '<i class="fas fa-check me-2"></i> Fetched Successfully';
@@ -842,7 +855,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 2000);
             
             showNotification(`Successfully fetched resources from ${node.name}`, 'success');
-          }, 2000);
+          } catch (error) {
+            console.error('Error fetching resources:', error);
+            e.currentTarget.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> Error';
+            
+            // Re-enable button after a delay
+            setTimeout(() => {
+              e.currentTarget.innerHTML = '<i class="fas fa-sync me-2"></i> Retry';
+              e.currentTarget.disabled = false;
+            }, 2000);
+            
+            showNotification(`Error fetching resources: ${error.message}`, 'error');
+          }
         }
       });
     });
@@ -885,35 +909,15 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     
     if (selectedNode) {
-      // Simulate fetching VMs from the selected node
-      setTimeout(() => {
-        // For demo, generate some sample VMs
-        const vms = [
-          {
-            id: 101,
-            name: 'web-server',
-            status: 'running',
-            cpu: { cores: 2, usage: 15 },
-            memory: { total: 4, used: 2.1 },
-            disk: { total: 32, used: 18.5 }
-          },
-          {
-            id: 102,
-            name: 'db-server',
-            status: 'running',
-            cpu: { cores: 4, usage: 45 },
-            memory: { total: 16, used: 12.4 },
-            disk: { total: 100, used: 76.2 }
-          },
-          {
-            id: 103,
-            name: 'mail-server',
-            status: 'stopped',
-            cpu: { cores: 2, usage: 0 },
-            memory: { total: 4, used: 0 },
-            disk: { total: 50, used: 23.7 }
-          }
-        ];
+      // Fetch VMs from the API
+      fetchData('/api/vms').then(response => {
+        if (!response.success) {
+          showNotification(`Error fetching VMs: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+        
+        // Filter VMs for the selected node
+        const vms = response.vms.filter(vm => vm.node === selectedNode.name);
         
         // Update the view with the VMs
         const cardBody = document.querySelector('.card-body');
@@ -1016,47 +1020,15 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     
     if (selectedNode) {
-      // Simulate fetching LXC containers from the selected node
-      setTimeout(() => {
-        // For demo, generate some sample containers
-        const containers = [
-          {
-            id: 201,
-            name: 'nginx-proxy',
-            status: 'running',
-            cpu: { cores: 1, usage: 8 },
-            memory: { total: 1, used: 0.5 },
-            disk: { total: 8, used: 3.2 },
-            ip: '10.10.10.201'
-          },
-          {
-            id: 202,
-            name: 'redis-cache',
-            status: 'running',
-            cpu: { cores: 2, usage: 24 },
-            memory: { total: 4, used: 3.1 },
-            disk: { total: 16, used: 7.8 },
-            ip: '10.10.10.202'
-          },
-          {
-            id: 203,
-            name: 'monitoring',
-            status: 'running',
-            cpu: { cores: 2, usage: 15 },
-            memory: { total: 2, used: 1.5 },
-            disk: { total: 20, used: 12.4 },
-            ip: '10.10.10.203'
-          },
-          {
-            id: 204,
-            name: 'dev-env',
-            status: 'stopped',
-            cpu: { cores: 2, usage: 0 },
-            memory: { total: 4, used: 0 },
-            disk: { total: 30, used: 18.6 },
-            ip: '10.10.10.204'
-          }
-        ];
+      // Fetch containers from the API
+      fetchData('/api/containers').then(response => {
+        if (!response.success) {
+          showNotification(`Error fetching containers: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+        
+        // Filter containers for the selected node
+        const containers = response.containers.filter(ct => ct.node === selectedNode.name);
         
         // Update the view with the containers
         const cardBody = document.querySelector('.card-body');
@@ -1160,47 +1132,15 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     
     if (selectedNode) {
-      // Simulate fetching network data from the selected node
-      setTimeout(() => {
-        // For demo, generate some sample network interfaces
-        const interfaces = [
-          {
-            name: 'eth0',
-            ip: '10.55.1.10',
-            netmask: '255.255.255.0',
-            mac: '00:1A:2B:3C:4D:5E',
-            status: 'up',
-            trafficIn: '4.5 MB/s',
-            trafficOut: '2.8 MB/s'
-          },
-          {
-            name: 'eth1',
-            ip: '192.168.1.10',
-            netmask: '255.255.255.0',
-            mac: '00:1A:2B:3C:4D:5F',
-            status: 'up',
-            trafficIn: '1.2 MB/s',
-            trafficOut: '0.8 MB/s'
-          },
-          {
-            name: 'vmbr0',
-            ip: '10.55.2.1',
-            netmask: '255.255.255.0',
-            mac: '00:1A:2B:3C:4D:60',
-            status: 'up',
-            trafficIn: '8.7 MB/s',
-            trafficOut: '5.3 MB/s'
-          },
-          {
-            name: 'lo',
-            ip: '127.0.0.1',
-            netmask: '255.0.0.0',
-            mac: '00:00:00:00:00:00',
-            status: 'up',
-            trafficIn: '0.1 MB/s',
-            trafficOut: '0.1 MB/s'
-          }
-        ];
+      // Fetch network data from the API
+      fetchData('/api/network').then(response => {
+        if (!response.success) {
+          showNotification(`Error fetching network data: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+        
+        // Filter interfaces for the selected node
+        const interfaces = response.interfaces.filter(iface => iface.node === selectedNode.name);
         
         // Update the view with the network interfaces
         const cardBody = document.querySelector('.card-body');
@@ -1405,26 +1345,14 @@ iface eth1 inet static
     `;
     
     if (selectedNode) {
-      // Simulate checking for updates
-      setTimeout(() => {
-        // For demo, generate some sample updates
-        const updates = {
-          node: [
-            { package: 'pve-kernel-5.15', currentVersion: '5.15.102-1', newVersion: '5.15.107-1', priority: 'security', type: 'Kernel' },
-            { package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security', type: 'System' },
-            { package: 'qemu-server', currentVersion: '7.2.0-3', newVersion: '7.2.0-5', priority: 'important', type: 'System' }
-          ],
-          vms: [
-            { id: 101, name: 'web-server', status: 'running', package: 'linux-image-generic', currentVersion: '5.15.0-78', newVersion: '5.15.0-82', priority: 'security' },
-            { id: 101, name: 'web-server', status: 'running', package: 'openssl', currentVersion: '3.0.2-0ubuntu1.9', newVersion: '3.0.2-0ubuntu1.10', priority: 'security' },
-            { id: 102, name: 'db-server', status: 'running', package: 'mysql-server', currentVersion: '8.0.32-0ubuntu0.22.04.2', newVersion: '8.0.34-0ubuntu0.22.04.1', priority: 'important' }
-          ],
-          containers: [
-            { id: 201, name: 'nginx-proxy', status: 'running', package: 'nginx', currentVersion: '1.22.1-1~bookworm', newVersion: '1.24.0-2~bookworm', priority: 'important' },
-            { id: 201, name: 'nginx-proxy', status: 'running', package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security' },
-            { id: 202, name: 'redis-cache', status: 'running', package: 'redis-server', currentVersion: '6:7.0.11-1~deb12u1', newVersion: '6:7.0.15-1~deb12u1', priority: 'security' }
-          ]
-        };
+      // Fetch updates from the API
+      fetchData('/api/updates').then(response => {
+        if (!response.success) {
+          showNotification(`Error fetching updates: ${response.error || 'Unknown error'}`, 'error');
+          return;
+        }
+        
+        const updates = response.updates;
         
         // Update the view with the updates
         const cardBody = document.querySelector('.card-body');

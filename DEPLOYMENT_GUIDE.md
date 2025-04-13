@@ -78,7 +78,7 @@ mkdir -p ~/applications
 cd ~/applications
 
 # Clone the repository
-git clone https://github.com/yourusername/proxmox-infrastructure-manager.git
+git clone https://github.com/proxmox-manager/proxmox-infrastructure-manager.git
 cd proxmox-infrastructure-manager
 ```
 
@@ -89,7 +89,7 @@ cd proxmox-infrastructure-manager
 npm install
 ```
 
-## Step 5: Run the Application
+## Step 6: Run the Application
 
 You can run the application in two ways:
 
@@ -118,7 +118,7 @@ cd dist/linux-unpacked
 ./proxmox-infrastructure-manager
 ```
 
-## Step 6: Set Up as a System Service (Optional)
+## Step 7: Set Up as a System Service (Optional)
 
 To run the application as a service that starts automatically with your system:
 
@@ -161,7 +161,7 @@ Check the service status:
 sudo systemctl status proxmox-manager.service
 ```
 
-## Step 7: Configure Firewall (Optional)
+## Step 8: Configure Firewall (Optional)
 
 If you have a firewall enabled, you need to allow port 5000:
 
@@ -174,7 +174,7 @@ sudo iptables -A INPUT -p tcp --dport 5000 -j ACCEPT
 sudo iptables-save | sudo tee /etc/iptables/rules.v4
 ```
 
-## Step 8: Access the Application
+## Step 9: Access the Application
 
 - If running as a service or development server: Open a web browser and navigate to `http://localhost:5000`
 - If running as a desktop application: The application will launch automatically after building

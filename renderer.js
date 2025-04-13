@@ -167,58 +167,64 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="sidebar-menu">
             <div class="sidebar-section">
               <h6><i class="fas fa-tachometer-alt me-2"></i> Overview</h6>
-              <button class="nav-link active" data-view="dashboard">
-                <i class="fas fa-chart-line me-2"></i> Dashboard
+              <button class="nav-link active" data-view="dashboard" title="Dashboard home with node management">
+                <i class="fas fa-home me-2"></i> Dashboard
               </button>
-              <button class="nav-link" data-view="nodes-overview">
-                <i class="fas fa-server me-2"></i> Nodes
+              <button class="nav-link" data-view="nodes-overview" title="Detailed overview of your Proxmox nodes">
+                <i class="fas fa-server me-2"></i> Nodes Overview
               </button>
-            </div>
-            <div class="sidebar-section">
-              <h6><i class="fas fa-desktop me-2"></i> Virtual Machines</h6>
-              <button class="nav-link" data-view="vm-list">
-                <i class="fas fa-list me-2"></i> VM List
-              </button>
-              <button class="nav-link" data-view="vm-create">
-                <i class="fas fa-plus me-2"></i> Create VM
+              <button class="nav-link" data-view="monitoring" title="Real-time resource monitoring and alerts">
+                <i class="fas fa-chart-line me-2"></i> Monitoring
               </button>
             </div>
+            
             <div class="sidebar-section">
-              <h6><i class="fas fa-box me-2"></i> Containers</h6>
-              <button class="nav-link" data-view="lxc-list">
-                <i class="fas fa-list me-2"></i> LXC List
+              <h6><i class="fas fa-cloud me-2"></i> Virtualization</h6>
+              <button class="nav-link" data-view="vm-list" title="Manage your virtual machines">
+                <i class="fas fa-desktop me-2"></i> Virtual Machines
               </button>
-              <button class="nav-link" data-view="lxc-create">
-                <i class="fas fa-plus me-2"></i> Create LXC
+              <button class="nav-link" data-view="vm-create" title="Create a new virtual machine">
+                <i class="fas fa-plus-circle me-2"></i> Create VM
               </button>
-            </div>
-            <div class="sidebar-section">
-              <h6><i class="fas fa-cogs me-2"></i> Management</h6>
-              <button class="nav-link" data-view="network">
-                <i class="fas fa-network-wired me-2"></i> Network
+              <button class="nav-link" data-view="lxc-list" title="Manage your LXC containers">
+                <i class="fas fa-box me-2"></i> Containers
               </button>
-              <button class="nav-link" data-view="storage">
-                <i class="fas fa-hdd me-2"></i> Storage
+              <button class="nav-link" data-view="lxc-create" title="Create a new LXC container">
+                <i class="fas fa-plus-circle me-2"></i> Create Container
               </button>
               <button class="nav-link" data-view="templates" title="Manage VM and Container templates">
                 <i class="fas fa-clone me-2"></i> Templates
               </button>
-              <button class="nav-link" data-view="monitoring" title="System resource monitoring">
-                <i class="fas fa-chart-line me-2"></i> Monitoring
+            </div>
+            
+            <div class="sidebar-section">
+              <h6><i class="fas fa-cogs me-2"></i> Management</h6>
+              <button class="nav-link" data-view="network" title="Network configuration and monitoring">
+                <i class="fas fa-network-wired me-2"></i> Network
               </button>
-              <button class="nav-link" data-view="updates">
+              <button class="nav-link" data-view="storage" title="Storage management and statistics">
+                <i class="fas fa-database me-2"></i> Storage
+              </button>
+              <button class="nav-link" data-view="batch-ops" title="Perform operations on multiple VMs/containers">
+                <i class="fas fa-tasks me-2"></i> Batch Operations
+              </button>
+              <button class="nav-link" data-view="updates" title="System and package updates">
                 <i class="fas fa-sync me-2"></i> Updates
               </button>
-              <button class="nav-link" data-view="apps">
-                <i class="fas fa-cubes me-2"></i> Applications
+              <button class="nav-link" data-view="apps" title="Applications management">
+                <i class="fas fa-th-large me-2"></i> Applications
               </button>
             </div>
+            
             <div class="sidebar-section">
               <h6><i class="fas fa-wrench me-2"></i> System</h6>
-              <button class="nav-link" data-view="settings">
+              <button class="nav-link" data-view="users" title="User management and access control">
+                <i class="fas fa-users me-2"></i> User Management
+              </button>
+              <button class="nav-link" data-view="settings" title="Application and system settings">
                 <i class="fas fa-sliders-h me-2"></i> Settings
               </button>
-              <button class="nav-link" data-view="logout">
+              <button class="nav-link" data-view="logout" title="Logout from the application">
                 <i class="fas fa-sign-out-alt me-2"></i> Logout
               </button>
             </div>
@@ -314,6 +320,12 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         case 'settings':
           loadSettingsView();
+          break;
+        case 'batch-ops':
+          loadBatchOperationsView();
+          break;
+        case 'users':
+          loadUserManagementView();
           break;
         default:
           // Show under development message for other views

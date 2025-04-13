@@ -118,9 +118,24 @@ async function getProxmoxAuthTicket(node) {
   }
 }
 
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
 // Add session middleware - IMPORTANT: This must come before route definitions
 const session = require('express-session');
+
+// Configure session store
+const pgSession = require('connect-pg-simple')(session);
+
 app.use(session({
+  store: new pgSession({
+    pool: pool,
+    tableName: 'user_sessions',
+    createTableIfMissing: true
+  }),
   secret: process.env.SESSION_SECRET || 'proxmox-manager-secret',
   resave: false,
   saveUninitialized: false,
@@ -396,11 +411,6 @@ app.get('/api/containers', async (req, res) => {
   }
 });
 
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
 
 // Initialize database tables
 async function initializeDatabase() {

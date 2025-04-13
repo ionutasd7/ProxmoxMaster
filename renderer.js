@@ -1894,27 +1894,56 @@ iface eth1 inet static
             
             <!-- Hardware Configuration -->
             <div class="mb-4">
-              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-microchip me-2"></i> Hardware Configuration</h6>
-              <div class="row g-3">
-                <div class="col-md-3">
-                  <label for="vm-cores" class="form-label">CPU Cores</label>
-                  <input type="number" class="form-control" id="vm-cores" value="2" min="1" max="32" required>
+              <h6 class="mb-3 border-bottom pb-2">
+                <i class="fas fa-microchip me-2"></i> Hardware Configuration
+                <div class="float-end">
+                  <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio" class="btn-check" name="vm-resource-option" id="vm-resource-predefined" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="vm-resource-predefined">Predefined Profiles</label>
+                    <input type="radio" class="btn-check" name="vm-resource-option" id="vm-resource-custom" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="vm-resource-custom">Custom</label>
+                  </div>
                 </div>
-                <div class="col-md-3">
-                  <label for="vm-memory" class="form-label">Memory (MB)</label>
-                  <input type="number" class="form-control" id="vm-memory" value="2048" min="512" step="512" required>
-                </div>
-                <div class="col-md-3">
-                  <label for="vm-disk" class="form-label">Disk Size (GB)</label>
-                  <input type="number" class="form-control" id="vm-disk" value="32" min="8" required>
-                </div>
-                <div class="col-md-3">
-                  <label for="vm-cpu-type" class="form-label">CPU Type</label>
-                  <select class="form-select" id="vm-cpu-type">
-                    <option value="host">Use host CPU (recommended)</option>
-                    <option value="kvm64">Generic KVM CPU</option>
-                    <option value="qemu64">Generic QEMU 64-bit CPU</option>
+              </h6>
+              
+              <!-- Predefined Resource Profiles -->
+              <div id="vm-predefined-resources">
+                <div class="mb-3">
+                  <label for="vm-profile" class="form-label">Resource Profile</label>
+                  <select class="form-select" id="vm-profile">
+                    <option value="minimal" data-cores="1" data-memory="1024" data-disk="10">Minimal (1 CPU, 1 GB RAM, 10 GB Disk)</option>
+                    <option value="small" data-cores="1" data-memory="2048" data-disk="20">Small (1 CPU, 2 GB RAM, 20 GB Disk)</option>
+                    <option value="medium" data-cores="2" data-memory="4096" data-disk="40" selected>Medium (2 CPU, 4 GB RAM, 40 GB Disk)</option>
+                    <option value="large" data-cores="4" data-memory="8192" data-disk="80">Large (4 CPU, 8 GB RAM, 80 GB Disk)</option>
+                    <option value="xlarge" data-cores="8" data-memory="16384" data-disk="160">Extra Large (8 CPU, 16 GB RAM, 160 GB Disk)</option>
                   </select>
+                  <div class="form-text">Select a predefined resource profile based on your workload needs</div>
+                </div>
+              </div>
+              
+              <!-- Custom Resource Configuration -->
+              <div id="vm-custom-resources" style="display: none;">
+                <div class="row g-3">
+                  <div class="col-md-3">
+                    <label for="vm-cores" class="form-label">CPU Cores</label>
+                    <input type="number" class="form-control" id="vm-cores" value="2" min="1" max="32" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="vm-memory" class="form-label">Memory (MB)</label>
+                    <input type="number" class="form-control" id="vm-memory" value="4096" min="512" step="512" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="vm-disk" class="form-label">Disk Size (GB)</label>
+                    <input type="number" class="form-control" id="vm-disk" value="40" min="8" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="vm-cpu-type" class="form-label">CPU Type</label>
+                    <select class="form-select" id="vm-cpu-type">
+                      <option value="host">Use host CPU (recommended)</option>
+                      <option value="kvm64">Generic KVM CPU</option>
+                      <option value="qemu64">Generic QEMU 64-bit CPU</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1992,9 +2021,51 @@ iface eth1 inet static
       </div>
     `;
     
+    // Add event listener for toggling between predefined and custom resources
+    document.getElementById('vm-resource-predefined').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('vm-predefined-resources').style.display = 'block';
+        document.getElementById('vm-custom-resources').style.display = 'none';
+      }
+    });
+    
+    document.getElementById('vm-resource-custom').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('vm-predefined-resources').style.display = 'none';
+        document.getElementById('vm-custom-resources').style.display = 'block';
+      }
+    });
+    
+    // Add event listener for profile selection to update form values
+    document.getElementById('vm-profile').addEventListener('change', function() {
+      const selectedOption = this.options[this.selectedIndex];
+      console.log(`Selected profile: ${selectedOption.value}`);
+      console.log(`Cores: ${selectedOption.dataset.cores}, Memory: ${selectedOption.dataset.memory}, Disk: ${selectedOption.dataset.disk}`);
+    });
+    
     // Add event listener for form submission
     document.getElementById('vm-create-form').addEventListener('submit', function(e) {
       e.preventDefault();
+      
+      // Get resource configuration based on selected option
+      let resources = {};
+      if (document.getElementById('vm-resource-predefined').checked) {
+        const selectedProfile = document.getElementById('vm-profile');
+        const option = selectedProfile.options[selectedProfile.selectedIndex];
+        resources = {
+          cores: option.dataset.cores,
+          memory: option.dataset.memory,
+          disk: option.dataset.disk
+        };
+      } else {
+        resources = {
+          cores: document.getElementById('vm-cores').value,
+          memory: document.getElementById('vm-memory').value,
+          disk: document.getElementById('vm-disk').value
+        };
+      }
+      
+      console.log('VM creation with resources:', resources);
       showNotification('This is a demo. VM creation is not implemented in this version.', 'info');
     });
   }
@@ -2062,23 +2133,52 @@ iface eth1 inet static
             
             <!-- Resources Configuration -->
             <div class="mb-4">
-              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-microchip me-2"></i> Resources Configuration</h6>
-              <div class="row g-3">
-                <div class="col-md-3">
-                  <label for="lxc-cores" class="form-label">CPU Cores</label>
-                  <input type="number" class="form-control" id="lxc-cores" value="1" min="1" max="32" required>
+              <h6 class="mb-3 border-bottom pb-2">
+                <i class="fas fa-microchip me-2"></i> Resources Configuration
+                <div class="float-end">
+                  <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio" class="btn-check" name="lxc-resource-option" id="lxc-resource-predefined" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="lxc-resource-predefined">Predefined Profiles</label>
+                    <input type="radio" class="btn-check" name="lxc-resource-option" id="lxc-resource-custom" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="lxc-resource-custom">Custom</label>
+                  </div>
                 </div>
-                <div class="col-md-3">
-                  <label for="lxc-memory" class="form-label">Memory (MB)</label>
-                  <input type="number" class="form-control" id="lxc-memory" value="512" min="128" step="128" required>
+              </h6>
+              
+              <!-- Predefined Resource Profiles -->
+              <div id="lxc-predefined-resources">
+                <div class="mb-3">
+                  <label for="lxc-profile" class="form-label">Resource Profile</label>
+                  <select class="form-select" id="lxc-profile">
+                    <option value="micro" data-cores="1" data-memory="256" data-swap="0" data-disk="4">Micro (1 CPU, 256 MB RAM, 4 GB Disk)</option>
+                    <option value="minimal" data-cores="1" data-memory="512" data-swap="0" data-disk="8" selected>Minimal (1 CPU, 512 MB RAM, 8 GB Disk)</option>
+                    <option value="small" data-cores="1" data-memory="1024" data-swap="512" data-disk="10">Small (1 CPU, 1 GB RAM, 512 MB Swap, 10 GB Disk)</option>
+                    <option value="medium" data-cores="2" data-memory="2048" data-swap="1024" data-disk="20">Medium (2 CPU, 2 GB RAM, 1 GB Swap, 20 GB Disk)</option>
+                    <option value="large" data-cores="4" data-memory="4096" data-swap="2048" data-disk="40">Large (4 CPU, 4 GB RAM, 2 GB Swap, 40 GB Disk)</option>
+                  </select>
+                  <div class="form-text">LXC containers are typically more lightweight than VMs</div>
                 </div>
-                <div class="col-md-3">
-                  <label for="lxc-swap" class="form-label">Swap (MB)</label>
-                  <input type="number" class="form-control" id="lxc-swap" value="0" min="0" step="128">
-                </div>
-                <div class="col-md-3">
-                  <label for="lxc-disk" class="form-label">Disk Size (GB)</label>
-                  <input type="number" class="form-control" id="lxc-disk" value="8" min="1" required>
+              </div>
+              
+              <!-- Custom Resource Configuration -->
+              <div id="lxc-custom-resources" style="display: none;">
+                <div class="row g-3">
+                  <div class="col-md-3">
+                    <label for="lxc-cores" class="form-label">CPU Cores</label>
+                    <input type="number" class="form-control" id="lxc-cores" value="1" min="1" max="32" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="lxc-memory" class="form-label">Memory (MB)</label>
+                    <input type="number" class="form-control" id="lxc-memory" value="512" min="128" step="128" required>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="lxc-swap" class="form-label">Swap (MB)</label>
+                    <input type="number" class="form-control" id="lxc-swap" value="0" min="0" step="128">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="lxc-disk" class="form-label">Disk Size (GB)</label>
+                    <input type="number" class="form-control" id="lxc-disk" value="8" min="1" required>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2176,9 +2276,53 @@ iface eth1 inet static
       }
     });
     
+    // Add event listener for toggling between predefined and custom resources
+    document.getElementById('lxc-resource-predefined').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('lxc-predefined-resources').style.display = 'block';
+        document.getElementById('lxc-custom-resources').style.display = 'none';
+      }
+    });
+    
+    document.getElementById('lxc-resource-custom').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('lxc-predefined-resources').style.display = 'none';
+        document.getElementById('lxc-custom-resources').style.display = 'block';
+      }
+    });
+    
+    // Add event listener for profile selection to update form values
+    document.getElementById('lxc-profile').addEventListener('change', function() {
+      const selectedOption = this.options[this.selectedIndex];
+      console.log(`Selected profile: ${selectedOption.value}`);
+      console.log(`Cores: ${selectedOption.dataset.cores}, Memory: ${selectedOption.dataset.memory}, Swap: ${selectedOption.dataset.swap}, Disk: ${selectedOption.dataset.disk}`);
+    });
+    
     // Add event listener for form submission
     document.getElementById('lxc-create-form').addEventListener('submit', function(e) {
       e.preventDefault();
+      
+      // Get resource configuration based on selected option
+      let resources = {};
+      if (document.getElementById('lxc-resource-predefined').checked) {
+        const selectedProfile = document.getElementById('lxc-profile');
+        const option = selectedProfile.options[selectedProfile.selectedIndex];
+        resources = {
+          cores: option.dataset.cores,
+          memory: option.dataset.memory,
+          swap: option.dataset.swap,
+          disk: option.dataset.disk
+        };
+      } else {
+        resources = {
+          cores: document.getElementById('lxc-cores').value,
+          memory: document.getElementById('lxc-memory').value,
+          swap: document.getElementById('lxc-swap').value,
+          disk: document.getElementById('lxc-disk').value
+        };
+      }
+      
+      console.log('Container creation with resources:', resources);
       showNotification('This is a demo. Container creation is not implemented in this version.', 'info');
     });
   }

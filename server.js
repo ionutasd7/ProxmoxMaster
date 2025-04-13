@@ -39,6 +39,11 @@ app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'test.html'));
 });
 
+// Serve minimal.html for minimal testing
+app.get('/minimal', (req, res) => {
+  res.sendFile(path.join(__dirname, 'minimal.html'));
+});
+
 // API Authentication endpoint - accepts any credentials for demo purposes
 app.post('/api/auth', (req, res) => {
   try {

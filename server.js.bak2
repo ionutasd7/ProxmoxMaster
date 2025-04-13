@@ -29,70 +29,6 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper function to get node details from the database
-async function getNodeFromDatabase(nodeId) {
-  const nodeResult = await pool.query(
-    'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-    [nodeId]
-  );
-  
-  if (nodeResult.rowCount === 0) {
-    return null;
-  }
-  
-  const dbNode = nodeResult.rows[0];
-  
-  return {
-    id: dbNode.id,
-    name: dbNode.name,
-    api_host: dbNode.hostname,
-    api_port: dbNode.port || 8006,
-    api_username: dbNode.username || 'api@pam!home', // Default to our API user
-    api_password: dbNode.password || '8cd15ef7-d25b-4955-9c32-48d42e23b109', // Default password
-    api_realm: 'pam',
-    use_ssl: true,
-    verify_ssl: false
-  };
-}
-
-// Helper function to authenticate with Proxmox API and get a ticket
-async function getProxmoxAuthTicket(node) {
-  const protocol = node.use_ssl ? 'https' : 'http';
-  // Format username correctly - don't add @realm if it's already included
-  const formattedUsername = node.api_username.includes('@') ? 
-    node.api_username : `${node.api_username}@${node.api_realm}`;
-  
-  const axiosInstance = axios.create({
-    httpsAgent: new https.Agent({
-      rejectUnauthorized: node.verify_ssl
-    }),
-    timeout: 8000 // 8 second timeout
-  });
-  
-  try {
-    console.log(`Authenticating with Proxmox API on ${node.api_host}:${node.api_port} using ${formattedUsername}`);
-    const authResponse = await axiosInstance.post(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
-      `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(node.api_password)}`,
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-    
-    console.log('Authentication successful, got ticket');
-    
-    return {
-      ticket: authResponse.data.data.ticket,
-      csrfToken: authResponse.data.data.CSRFPreventionToken
-    };
-  } catch (err) {
-    console.error('Proxmox authentication error:', err);
-    throw err;
-  }
-}
-
 // Add session middleware - IMPORTANT: This must come before route definitions
 const session = require('express-session');
 app.use(session({
@@ -609,6 +545,14 @@ app.get('/api/nodes/:id', async (req, res) => {
     
     // Connect to Proxmox API to get real-time data
     const protocol = node.use_ssl ? 'https' : 'http';
+    // Format username correctly - don't add @realm if it's already included
+    const formattedUsername = node.api_username.includes('@') ? 
+      node.api_username : `${node.api_username}@${node.api_realm}`;
+    
+    const auth = {
+      username: formattedUsername,
+      password: node.api_password
+    };
     
     try {
       const axiosInstance = axios.create({
@@ -618,27 +562,16 @@ app.get('/api/nodes/:id', async (req, res) => {
         timeout: 5000 // 5 second timeout
       });
       
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
       // Get cluster status
       const clusterResponse = await axiosInstance.get(
         `${protocol}://${node.api_host}:${node.api_port}/api2/json/cluster/status`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
+        { auth }
       );
       
       // Get node status
       const nodeResponse = await axiosInstance.get(
         `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
+        { auth }
       );
       
       res.json({
@@ -690,6 +623,10 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
     };
     
     const protocol = node.use_ssl ? 'https' : 'http';
+    const auth = {
+      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      password: node.api_password
+    };
     
     try {
       // Connect to Proxmox API
@@ -700,17 +637,10 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
         timeout: 5000 // 5 second timeout
       });
       
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
       // Get VMs from node
       const response = await axiosInstance.get(
         `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/qemu`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
+        { auth }
       );
       
       res.json(response.data.data || []);
@@ -752,6 +682,10 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
     };
     
     const protocol = node.use_ssl ? 'https' : 'http';
+    const auth = {
+      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      password: node.api_password
+    };
     
     try {
       // Connect to Proxmox API
@@ -762,17 +696,10 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
         timeout: 5000 // 5 second timeout
       });
       
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
       // Get LXC containers from node
       const response = await axiosInstance.get(
         `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/lxc`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
+        { auth }
       );
       
       res.json(response.data.data || []);
@@ -908,6 +835,10 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
     };
     
     const protocol = node.use_ssl ? 'https' : 'http';
+    const auth = {
+      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      password: node.api_password
+    };
     
     try {
       // Connect to Proxmox API
@@ -918,9 +849,6 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
         timeout: 5000 // 5 second timeout
       });
       
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
       // Get node RRD data for CPU, memory, network, etc.
       const rrdResponse = await axiosInstance.get(
         `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata`,
@@ -929,9 +857,7 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
             timeframe: 'hour',
             cf: 'AVERAGE'
           },
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
+          auth 
         }
       );
       

@@ -558,43 +558,58 @@ export class DashboardView {
     
     return `
       <div class="row mb-4">
-        <div class="col-md-6">
+        <div class="col-md-4">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
               <h5 class="mb-0">
                 <i class="fas fa-microchip me-2 text-primary"></i>
                 CPU Usage
               </h5>
-              <div class="btn-group">
-                <button class="btn btn-sm btn-outline-secondary active" data-time="1h">1h</button>
-                <button class="btn btn-sm btn-outline-secondary" data-time="6h">6h</button>
-                <button class="btn btn-sm btn-outline-secondary" data-time="24h">24h</button>
-              </div>
             </div>
-            <div class="card-body">
-              <div class="chart-container" id="cpu-chart-container">
-                <canvas id="cpu-chart"></canvas>
+            <div class="card-body text-center">
+              <div class="usage-display">
+                <div class="usage-circle" id="cpu-usage-circle">
+                  <span class="usage-percentage" id="cpu-usage-percentage">0%</span>
+                  <span class="usage-label" id="cpu-usage-label">16 CPUs, 1 Socket(s)</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
         
-        <div class="col-md-6">
+        <div class="col-md-4">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
               <h5 class="mb-0">
-                <i class="fas fa-memory me-2 text-primary"></i>
+                <i class="fas fa-memory me-2 text-success"></i>
                 Memory Usage
               </h5>
-              <div class="btn-group">
-                <button class="btn btn-sm btn-outline-secondary active" data-time="1h">1h</button>
-                <button class="btn btn-sm btn-outline-secondary" data-time="6h">6h</button>
-                <button class="btn btn-sm btn-outline-secondary" data-time="24h">24h</button>
+            </div>
+            <div class="card-body text-center">
+              <div class="usage-display">
+                <div class="usage-circle" id="memory-usage-circle">
+                  <span class="usage-percentage" id="memory-usage-percentage">0%</span>
+                  <span class="usage-label" id="memory-usage-label">0 GB / 0 GB</span>
+                </div>
               </div>
             </div>
-            <div class="card-body">
-              <div class="chart-container" id="memory-chart-container">
-                <canvas id="memory-chart"></canvas>
+          </div>
+        </div>
+        
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">
+                <i class="fas fa-hdd me-2 text-danger"></i>
+                Disk Usage
+              </h5>
+            </div>
+            <div class="card-body text-center">
+              <div class="usage-display">
+                <div class="usage-circle" id="disk-usage-circle">
+                  <span class="usage-percentage" id="disk-usage-percentage">0%</span>
+                  <span class="usage-label" id="disk-usage-label">0 GB / 0 GB</span>
+                </div>
               </div>
             </div>
           </div>
@@ -604,15 +619,24 @@ export class DashboardView {
       <div class="row mb-4">
         <div class="col-md-6">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
               <h5 class="mb-0">
-                <i class="fas fa-hdd me-2 text-primary"></i>
-                Storage Usage
+                <i class="fas fa-network-wired me-2 text-info"></i>
+                Network Traffic
               </h5>
             </div>
             <div class="card-body">
-              <div class="chart-container" id="storage-chart-container">
-                <canvas id="storage-chart"></canvas>
+              <div class="network-usage-display p-3 text-center">
+                <div class="row">
+                  <div class="col-6 border-end">
+                    <h6 class="text-primary">Inbound</h6>
+                    <div class="network-value" id="network-in">0 MB/s</div>
+                  </div>
+                  <div class="col-6">
+                    <h6 class="text-warning">Outbound</h6>
+                    <div class="network-value" id="network-out">0 MB/s</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -620,15 +644,37 @@ export class DashboardView {
         
         <div class="col-md-6">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
               <h5 class="mb-0">
-                <i class="fas fa-network-wired me-2 text-primary"></i>
-                Network Traffic
+                <i class="fas fa-server me-2 text-secondary"></i>
+                Cluster Status
               </h5>
             </div>
             <div class="card-body">
-              <div class="chart-container" id="network-chart-container">
-                <canvas id="network-chart"></canvas>
+              <div class="cluster-status-display p-3">
+                <div class="row text-center">
+                  <div class="col-4">
+                    <div class="status-circle bg-success">
+                      <i class="fas fa-check"></i>
+                    </div>
+                    <div class="status-label mt-2">Online Nodes</div>
+                    <div class="status-value" id="online-nodes">0</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="status-circle bg-warning">
+                      <i class="fas fa-exclamation"></i>
+                    </div>
+                    <div class="status-label mt-2">Warning Nodes</div>
+                    <div class="status-value" id="warning-nodes">0</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="status-circle bg-danger">
+                      <i class="fas fa-times"></i>
+                    </div>
+                    <div class="status-label mt-2">Offline Nodes</div>
+                    <div class="status-value" id="offline-nodes">0</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -748,15 +794,26 @@ export class DashboardView {
   initializeCharts(nodes) {
     if (nodes.length === 0) return;
     
-    // Only initialize charts with actual node data
+    // Set default values
+    document.getElementById('cpu-usage-percentage').textContent = '0%';
+    document.getElementById('memory-usage-percentage').textContent = '0%';
+    document.getElementById('disk-usage-percentage').textContent = '0%';
+    document.getElementById('cpu-usage-label').textContent = '0 CPUs, 0 Socket(s)';
+    document.getElementById('memory-usage-label').textContent = '0 GB / 0 GB';
+    document.getElementById('disk-usage-label').textContent = '0 GB / 0 GB';
+    document.getElementById('network-in').textContent = '0 MB/s';
+    document.getElementById('network-out').textContent = '0 MB/s';
+    document.getElementById('online-nodes').textContent = '0';
+    document.getElementById('warning-nodes').textContent = '0';
+    document.getElementById('offline-nodes').textContent = '0';
+    
+    // Only initialize with actual node data
     setTimeout(() => {
       // Get aggregate node monitoring data
       this.fetchNodesMonitoringData(nodes).then(monitoringData => {
         if (monitoringData && monitoringData.length > 0) {
-          this.initCPUChart(monitoringData);
-          this.initMemoryChart(monitoringData);
-          this.initStorageChart(monitoringData);
-          this.initNetworkChart(monitoringData);
+          this.updateResourceDisplays(monitoringData);
+          this.updateNodeStatusCounts(nodes);
         }
       });
     }, 100);

@@ -282,11 +282,20 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'vm-list':
           loadVMListView();
           break;
+        case 'vm-create':
+          loadVMCreateView();
+          break;
         case 'lxc-list':
           loadLXCListView();
           break;
+        case 'lxc-create':
+          loadLXCCreateView();
+          break;
         case 'network':
           loadNetworkView();
+          break;
+        case 'storage':
+          loadStorageView();
           break;
         case 'updates':
           loadUpdatesView();
@@ -1820,6 +1829,608 @@ iface eth1 inet static
         </div>
       </div>
     `;
+  }
+  
+  // VM Create View
+  function loadVMCreateView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Create Virtual Machine')}
+      
+      <div class="card glow-border mb-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i> NEW VIRTUAL MACHINE</h5>
+        </div>
+        <div class="card-body">
+          <form id="vm-create-form">
+            <!-- Basic Information -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-info-circle me-2"></i> Basic Information</h6>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="vm-node" class="form-label">Target Node</label>
+                  <select class="form-select" id="vm-node" required>
+                    <option value="" selected disabled>Select a node</option>
+                    ${state.nodes.map(node => `<option value="${node.id}">${node.name} (${node.hostname})</option>`).join('')}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label for="vm-id" class="form-label">VM ID</label>
+                  <input type="number" class="form-control" id="vm-id" placeholder="e.g., 100" value="100" required>
+                  <div class="form-text">Usually starts from 100</div>
+                </div>
+                <div class="col-md-4">
+                  <label for="vm-name" class="form-label">VM Name</label>
+                  <input type="text" class="form-control" id="vm-name" placeholder="e.g., web-server" required>
+                </div>
+              </div>
+            </div>
+            
+            <!-- OS and Boot Options -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-compact-disc me-2"></i> OS and Boot Options</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label for="vm-iso" class="form-label">ISO Image</label>
+                  <select class="form-select" id="vm-iso">
+                    <option value="" selected disabled>Select an ISO</option>
+                    <option value="debian-12.iso">Debian 12 (bookworm)</option>
+                    <option value="ubuntu-22.04-live-server-amd64.iso">Ubuntu 22.04 LTS Server</option>
+                    <option value="CentOS-Stream-9-latest-x86_64-dvd1.iso">CentOS Stream 9</option>
+                    <option value="Windows_Server_2022_x64.iso">Windows Server 2022</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label for="vm-storage" class="form-label">Storage</label>
+                  <select class="form-select" id="vm-storage">
+                    <option value="local-lvm">local-lvm</option>
+                    <option value="local-zfs">local-zfs</option>
+                    <option value="ceph">ceph</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Hardware Configuration -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-microchip me-2"></i> Hardware Configuration</h6>
+              <div class="row g-3">
+                <div class="col-md-3">
+                  <label for="vm-cores" class="form-label">CPU Cores</label>
+                  <input type="number" class="form-control" id="vm-cores" value="2" min="1" max="32" required>
+                </div>
+                <div class="col-md-3">
+                  <label for="vm-memory" class="form-label">Memory (MB)</label>
+                  <input type="number" class="form-control" id="vm-memory" value="2048" min="512" step="512" required>
+                </div>
+                <div class="col-md-3">
+                  <label for="vm-disk" class="form-label">Disk Size (GB)</label>
+                  <input type="number" class="form-control" id="vm-disk" value="32" min="8" required>
+                </div>
+                <div class="col-md-3">
+                  <label for="vm-cpu-type" class="form-label">CPU Type</label>
+                  <select class="form-select" id="vm-cpu-type">
+                    <option value="host">Use host CPU (recommended)</option>
+                    <option value="kvm64">Generic KVM CPU</option>
+                    <option value="qemu64">Generic QEMU 64-bit CPU</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Network Configuration -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-network-wired me-2"></i> Network Configuration</h6>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="vm-network-model" class="form-label">Network Model</label>
+                  <select class="form-select" id="vm-network-model">
+                    <option value="virtio">VirtIO (recommended)</option>
+                    <option value="e1000">Intel E1000</option>
+                    <option value="rtl8139">Realtek RTL8139</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label for="vm-bridge" class="form-label">Bridge</label>
+                  <select class="form-select" id="vm-bridge">
+                    <option value="vmbr0">vmbr0</option>
+                    <option value="vmbr1">vmbr1</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label for="vm-vlan" class="form-label">VLAN Tag</label>
+                  <input type="number" class="form-control" id="vm-vlan" placeholder="Leave empty for none">
+                  <div class="form-text">Optional VLAN tag</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Advanced Options -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2">
+                <i class="fas fa-sliders-h me-2"></i> Advanced Options
+                <button type="button" class="btn btn-sm btn-outline-secondary float-end" data-bs-toggle="collapse" data-bs-target="#advanced-options">
+                  <i class="fas fa-chevron-down"></i> Toggle
+                </button>
+              </h6>
+              <div id="advanced-options" class="collapse">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="vm-start-after-create" checked>
+                      <label class="form-check-label" for="vm-start-after-create">Start after creation</label>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="vm-qemu-agent" checked>
+                      <label class="form-check-label" for="vm-qemu-agent">Enable QEMU agent</label>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="vm-bios-uefi">
+                      <label class="form-check-label" for="vm-bios-uefi">Use UEFI (otherwise BIOS)</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Submit Button -->
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+              <button type="button" class="btn btn-outline-secondary me-md-2" onclick="loadView('vm-list')">
+                <i class="fas fa-times me-2"></i> Cancel
+              </button>
+              <button type="submit" class="btn btn-primary">
+                <i class="fas fa-plus-circle me-2"></i> Create Virtual Machine
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener for form submission
+    document.getElementById('vm-create-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      showNotification('This is a demo. VM creation is not implemented in this version.', 'info');
+    });
+  }
+  
+  // LXC Create View
+  function loadLXCCreateView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Create LXC Container')}
+      
+      <div class="card glow-border mb-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-box me-2"></i> NEW LXC CONTAINER</h5>
+        </div>
+        <div class="card-body">
+          <form id="lxc-create-form">
+            <!-- Basic Information -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-info-circle me-2"></i> Basic Information</h6>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="lxc-node" class="form-label">Target Node</label>
+                  <select class="form-select" id="lxc-node" required>
+                    <option value="" selected disabled>Select a node</option>
+                    ${state.nodes.map(node => `<option value="${node.id}">${node.name} (${node.hostname})</option>`).join('')}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label for="lxc-id" class="form-label">Container ID</label>
+                  <input type="number" class="form-control" id="lxc-id" placeholder="e.g., 200" value="200" required>
+                  <div class="form-text">Usually starts from 200</div>
+                </div>
+                <div class="col-md-4">
+                  <label for="lxc-name" class="form-label">Container Name</label>
+                  <input type="text" class="form-control" id="lxc-name" placeholder="e.g., web-server" required>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Template and Storage -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-compact-disc me-2"></i> Template and Storage</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label for="lxc-template" class="form-label">Template</label>
+                  <select class="form-select" id="lxc-template" required>
+                    <option value="" selected disabled>Select a template</option>
+                    <option value="debian-12-standard">Debian 12 (Bookworm)</option>
+                    <option value="ubuntu-22.04-standard">Ubuntu 22.04 LTS</option>
+                    <option value="centos-9-stream-default">CentOS Stream 9</option>
+                    <option value="alpine-3.18-default">Alpine 3.18</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label for="lxc-storage" class="form-label">Storage</label>
+                  <select class="form-select" id="lxc-storage" required>
+                    <option value="local-lvm">local-lvm</option>
+                    <option value="local-zfs">local-zfs</option>
+                    <option value="ceph">ceph</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Resources Configuration -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-microchip me-2"></i> Resources Configuration</h6>
+              <div class="row g-3">
+                <div class="col-md-3">
+                  <label for="lxc-cores" class="form-label">CPU Cores</label>
+                  <input type="number" class="form-control" id="lxc-cores" value="1" min="1" max="32" required>
+                </div>
+                <div class="col-md-3">
+                  <label for="lxc-memory" class="form-label">Memory (MB)</label>
+                  <input type="number" class="form-control" id="lxc-memory" value="512" min="128" step="128" required>
+                </div>
+                <div class="col-md-3">
+                  <label for="lxc-swap" class="form-label">Swap (MB)</label>
+                  <input type="number" class="form-control" id="lxc-swap" value="0" min="0" step="128">
+                </div>
+                <div class="col-md-3">
+                  <label for="lxc-disk" class="form-label">Disk Size (GB)</label>
+                  <input type="number" class="form-control" id="lxc-disk" value="8" min="1" required>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Network Configuration -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-network-wired me-2"></i> Network Configuration</h6>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="lxc-net-name" class="form-label">Network Name</label>
+                  <input type="text" class="form-control" id="lxc-net-name" value="eth0" required>
+                </div>
+                <div class="col-md-4">
+                  <label for="lxc-bridge" class="form-label">Bridge</label>
+                  <select class="form-select" id="lxc-bridge" required>
+                    <option value="vmbr0">vmbr0</option>
+                    <option value="vmbr1">vmbr1</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label for="lxc-ip-config" class="form-label">IP Configuration</label>
+                  <select class="form-select" id="lxc-ip-config" required>
+                    <option value="dhcp">DHCP</option>
+                    <option value="static">Static IP</option>
+                  </select>
+                </div>
+                <div class="col-md-6 static-ip-fields" style="display: none;">
+                  <label for="lxc-ip" class="form-label">IP Address/CIDR</label>
+                  <input type="text" class="form-control" id="lxc-ip" placeholder="e.g., 192.168.1.100/24">
+                </div>
+                <div class="col-md-6 static-ip-fields" style="display: none;">
+                  <label for="lxc-gateway" class="form-label">Gateway</label>
+                  <input type="text" class="form-control" id="lxc-gateway" placeholder="e.g., 192.168.1.1">
+                </div>
+              </div>
+            </div>
+            
+            <!-- DNS Configuration -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-globe me-2"></i> DNS Configuration</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label for="lxc-hostname" class="form-label">Hostname</label>
+                  <input type="text" class="form-control" id="lxc-hostname" placeholder="Container hostname" required>
+                </div>
+                <div class="col-md-6">
+                  <label for="lxc-dns" class="form-label">DNS Servers</label>
+                  <input type="text" class="form-control" id="lxc-dns" value="8.8.8.8 8.8.4.4" placeholder="Space separated DNS servers">
+                </div>
+              </div>
+            </div>
+            
+            <!-- Password and SSH -->
+            <div class="mb-4">
+              <h6 class="mb-3 border-bottom pb-2"><i class="fas fa-key me-2"></i> Authentication</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label for="lxc-password" class="form-label">Root Password</label>
+                  <input type="password" class="form-control" id="lxc-password" required>
+                </div>
+                <div class="col-md-6">
+                  <label for="lxc-confirm-password" class="form-label">Confirm Password</label>
+                  <input type="password" class="form-control" id="lxc-confirm-password" required>
+                </div>
+              </div>
+              <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="lxc-ssh-keys">
+                <label class="form-check-label" for="lxc-ssh-keys">
+                  Configure SSH keys (you'll be prompted to add them later)
+                </label>
+              </div>
+            </div>
+            
+            <!-- Submit Button -->
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+              <button type="button" class="btn btn-outline-secondary me-md-2" onclick="loadView('lxc-list')">
+                <i class="fas fa-times me-2"></i> Cancel
+              </button>
+              <button type="submit" class="btn btn-primary">
+                <i class="fas fa-plus-circle me-2"></i> Create Container
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener for IP configuration to toggle static IP fields
+    document.getElementById('lxc-ip-config').addEventListener('change', function(e) {
+      const staticFields = document.querySelectorAll('.static-ip-fields');
+      if (e.target.value === 'static') {
+        staticFields.forEach(field => field.style.display = 'block');
+      } else {
+        staticFields.forEach(field => field.style.display = 'none');
+      }
+    });
+    
+    // Add event listener for form submission
+    document.getElementById('lxc-create-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      showNotification('This is a demo. Container creation is not implemented in this version.', 'info');
+    });
+  }
+  
+  // Storage View
+  function loadStorageView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Storage Management')}
+      
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="card glow-border h-100">
+            <div class="card-header">
+              <h5 class="mb-0"><i class="fas fa-hdd me-2"></i> STORAGE OVERVIEW</h5>
+            </div>
+            <div class="card-body">
+              ${state.nodes.length === 0 ? 
+                `<div class="alert alert-info">
+                  <i class="fas fa-info-circle me-2"></i> Please add a node to view available storage.
+                </div>` :
+                `<div class="table-responsive">
+                  <table class="table table-dark table-hover">
+                    <thead>
+                      <tr>
+                        <th>Node</th>
+                        <th>Total Space</th>
+                        <th>Used Space</th>
+                        <th>Free Space</th>
+                        <th>Usage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${state.nodes.map(node => `
+                        <tr>
+                          <td>${node.name}</td>
+                          <td>3.0 TB</td>
+                          <td>1.2 TB</td>
+                          <td>1.8 TB</td>
+                          <td>
+                            <div class="progress" style="height: 10px;">
+                              <div class="progress-bar bg-primary" role="progressbar" style="width: 40%"></div>
+                            </div>
+                            <small class="text-muted">40%</small>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>`
+              }
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-6">
+          <div class="card glow-border h-100">
+            <div class="card-header">
+              <h5 class="mb-0"><i class="fas fa-database me-2"></i> STORAGE POOLS</h5>
+            </div>
+            <div class="card-body">
+              ${state.nodes.length === 0 ? 
+                `<div class="alert alert-info">
+                  <i class="fas fa-info-circle me-2"></i> Please add a node to view storage pools.
+                </div>` :
+                `<div class="table-responsive">
+                  <table class="table table-dark table-hover">
+                    <thead>
+                      <tr>
+                        <th>Pool</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Size</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>local-lvm</td>
+                        <td>LVM-Thin</td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>1.0 TB</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>local-zfs</td>
+                        <td>ZFS</td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>1.5 TB</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>ceph-pool</td>
+                        <td>RBD</td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>500 GB</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>`
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card glow-border">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i> ADD STORAGE</h5>
+              <button class="btn btn-sm btn-outline-primary"><i class="fas fa-plus me-2"></i> New Storage</button>
+            </div>
+            <div class="card-body">
+              <form id="add-storage-form">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label for="storage-node" class="form-label">Target Node</label>
+                    <select class="form-select" id="storage-node" required>
+                      <option value="" selected disabled>Select a node</option>
+                      ${state.nodes.map(node => `<option value="${node.id}">${node.name} (${node.hostname})</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="storage-id" class="form-label">Storage ID</label>
+                    <input type="text" class="form-control" id="storage-id" placeholder="e.g., ceph-pool" required>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="storage-type" class="form-label">Storage Type</label>
+                    <select class="form-select" id="storage-type" required>
+                      <option value="" selected disabled>Select type</option>
+                      <option value="dir">Directory</option>
+                      <option value="lvm">LVM</option>
+                      <option value="lvmthin">LVM-Thin</option>
+                      <option value="zfs">ZFS</option>
+                      <option value="ceph">Ceph RBD</option>
+                      <option value="nfs">NFS</option>
+                      <option value="cifs">CIFS/SMB</option>
+                      <option value="glusterfs">GlusterFS</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <!-- Type-specific fields will be shown here based on selection -->
+                <div id="storage-type-fields" class="mt-3">
+                  <!-- These fields will be populated dynamically -->
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                  <button type="button" class="btn btn-outline-secondary me-md-2">
+                    <i class="fas fa-times me-2"></i> Cancel
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus-circle me-2"></i> Add Storage
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener for storage form submission
+    document.getElementById('add-storage-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      showNotification('This is a demo. Storage creation is not implemented in this version.', 'info');
+    });
+    
+    // Add event listener for storage type change
+    document.getElementById('storage-type').addEventListener('change', function(e) {
+      const storageType = e.target.value;
+      const fieldsContainer = document.getElementById('storage-type-fields');
+      
+      // Different fields based on storage type
+      let fields = '';
+      switch(storageType) {
+        case 'dir':
+          fields = `
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Directory Path</label>
+                <input type="text" class="form-control" placeholder="/path/to/storage" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Content Types</label>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" checked>
+                  <label class="form-check-label">Disk image</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" checked>
+                  <label class="form-check-label">ISO image</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" checked>
+                  <label class="form-check-label">Container template</label>
+                </div>
+              </div>
+            </div>
+          `;
+          break;
+        case 'ceph':
+          fields = `
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Monitor Hosts</label>
+                <input type="text" class="form-control" placeholder="mon1.example.com mon2.example.com" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Pool Name</label>
+                <input type="text" class="form-control" placeholder="rbd_pool" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Client ID</label>
+                <input type="text" class="form-control" placeholder="admin" required>
+              </div>
+            </div>
+          `;
+          break;
+        case 'nfs':
+          fields = `
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Server</label>
+                <input type="text" class="form-control" placeholder="nfs.example.com" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Export Path</label>
+                <input type="text" class="form-control" placeholder="/export/path" required>
+              </div>
+            </div>
+          `;
+          break;
+        default:
+          fields = `
+            <div class="alert alert-info">
+              <i class="fas fa-info-circle me-2"></i> Please select a storage type to see the configuration options.
+            </div>
+          `;
+      }
+      
+      fieldsContainer.innerHTML = fields;
+    });
   }
   
   // Start the application with the login screen

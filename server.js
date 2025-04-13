@@ -41,35 +41,10 @@ app.post('/api/auth', (req, res) => {
 
 // Nodes data endpoint
 app.get('/api/nodes', (req, res) => {
-  // Return sample nodes data
+  // Return empty nodes array - user will add nodes manually
   res.json({
     success: true,
-    nodes: [
-      {
-        name: 'pve1',
-        status: 'online',
-        uptime: 2592000, // 30 days in seconds
-        cpu: { cores: 8, usage: 0.21 },
-        memory: { total: 32768, used: 13762 }, // In MB
-        disk: { total: 3072, used: 1997 } // In GB
-      },
-      {
-        name: 'pve2',
-        status: 'online',
-        uptime: 1296000, // 15 days in seconds
-        cpu: { cores: 16, usage: 0.35 },
-        memory: { total: 65536, used: 28672 }, // In MB
-        disk: { total: 5120, used: 3277 } // In GB
-      },
-      {
-        name: 'pve3',
-        status: 'online',
-        uptime: 864000, // 10 days in seconds
-        cpu: { cores: 8, usage: 0.15 },
-        memory: { total: 32768, used: 8192 }, // In MB
-        disk: { total: 2048, used: 1126 } // In GB
-      }
-    ]
+    nodes: []
   });
 });
 

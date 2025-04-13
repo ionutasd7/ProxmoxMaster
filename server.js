@@ -71,15 +71,40 @@ async function getProxmoxAuthTicket(node) {
   
   try {
     console.log(`Authenticating with Proxmox API on ${node.api_host}:${node.api_port} using ${formattedUsername}`);
-    const authResponse = await axiosInstance.post(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
-      `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(node.api_password)}`,
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+    
+    // Debug authentication details (sanitized password)
+    console.log(`Authentication details: user=${formattedUsername}, password=[REDACTED]`);
+    
+    // Try different authentication methods
+    let authResponse;
+    try {
+      // Method 1: Form data with proper encoding
+      authResponse = await axiosInstance.post(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
+        `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(node.api_password)}`,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
         }
-      }
-    );
+      );
+    } catch (err) {
+      console.log('First authentication method failed, trying alternative approach');
+      
+      // Method 2: JSON data
+      authResponse = await axiosInstance.post(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
+        {
+          username: formattedUsername,
+          password: node.api_password
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
     
     console.log('Authentication successful, got ticket');
     
@@ -441,17 +466,40 @@ app.post('/api/test-connection', async (req, res) => {
   });
   
   try {
-    // First, authenticate using ticket-based authentication
+    // Log sanitized authentication attempt
     console.log('Authenticating with Proxmox API...');
-    const authResponse = await axiosInstance.post(
-      `${protocol}://${host}:${port}/api2/json/access/ticket`,
-      `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(password)}`,
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+    console.log(`Authentication details: user=${formattedUsername}, password=[REDACTED]`);
+    
+    // Try different authentication methods
+    let authResponse;
+    try {
+      // Method 1: Form data with proper encoding
+      authResponse = await axiosInstance.post(
+        `${protocol}://${host}:${port}/api2/json/access/ticket`,
+        `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(password)}`,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
         }
-      }
-    );
+      );
+    } catch (firstErr) {
+      console.log('First authentication method failed, trying alternative approach');
+      
+      // Method 2: JSON data
+      authResponse = await axiosInstance.post(
+        `${protocol}://${host}:${port}/api2/json/access/ticket`,
+        {
+          username: formattedUsername,
+          password: password
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
     
     console.log('Authentication successful, got ticket');
     

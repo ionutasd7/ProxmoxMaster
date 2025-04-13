@@ -13,6 +13,17 @@ const { Client } = require('ssh2');
 const fs = require('fs');
 require('dotenv').config();
 
+// Check for development mode
+// NODE_ENV is a common environment variable used to determine the application environment
+// We'll default to development mode unless explicitly set to production
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'development';
+  console.log('Running in development mode - Proxmox connections will be simulated');
+}
+
+// This flag can be used throughout the application to check if we're in development mode
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
 // Create Express app
 const app = express();
 const port = process.env.PORT || 5000;
@@ -504,6 +515,56 @@ app.get('/api/nodes/:id', async (req, res) => {
       verify_ssl: false
     };
     
+    // For development purposes only - in production, this would actually connect to Proxmox API
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    if (isDevelopment) {
+      // Simulate Proxmox API response with development data
+      return res.json({
+        node: node,
+        cluster: [
+          {
+            type: "cluster",
+            id: "cluster",
+            name: "Dev Cluster",
+            nodes: 4,
+            quorate: true,
+            version: "7.4.1"
+          }
+        ],
+        status: {
+          cpuinfo: {
+            cores: 8,
+            cpus: 8,
+            flags: "fpu vme de pse pae msr",
+            hvm: "1",
+            mhz: "3600.000",
+            model: "AMD Ryzen 7 (Development)",
+            sockets: 1,
+            "user_hz": "100"
+          },
+          memory: {
+            free: 12582912000,
+            total: 16777216000,
+            used: 4194304000
+          },
+          swap: {
+            free: 4194304000,
+            total: 4194304000,
+            used: 0
+          },
+          rootfs: {
+            free: 104857600000,
+            total: 209715200000,
+            used: 104857600000
+          },
+          uptime: 86400, // 1 day
+          pveversion: "pve-manager/7.4.1 (development mode)"
+        }
+      });
+    }
+    
+    // Production code below - only executes in production
     // Connect to Proxmox API to get real-time data
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
@@ -579,6 +640,43 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
       verify_ssl: false
     };
     
+    // For development purposes only - in production, this would actually connect to Proxmox API
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    if (isDevelopment) {
+      // Simulate VM list with development data
+      return res.json([
+        {
+          vmid: 100,
+          name: "dev-vm-01",
+          status: "running",
+          maxmem: 4294967296, // 4GB
+          maxcpu: 2,
+          node: dbNode.name,
+          type: "qemu"
+        },
+        {
+          vmid: 101,
+          name: "dev-vm-02",
+          status: "stopped",
+          maxmem: 2147483648, // 2GB
+          maxcpu: 1,
+          node: dbNode.name,
+          type: "qemu"
+        },
+        {
+          vmid: 102,
+          name: "dev-vm-03",
+          status: "running",
+          maxmem: 8589934592, // 8GB
+          maxcpu: 4,
+          node: dbNode.name,
+          type: "qemu"
+        }
+      ]);
+    }
+    
+    // Production code below - only executes in production    
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
@@ -638,6 +736,43 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
       verify_ssl: false
     };
     
+    // For development purposes only - in production, this would actually connect to Proxmox API
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    if (isDevelopment) {
+      // Simulate LXC container list with development data
+      return res.json([
+        {
+          vmid: 200,
+          name: "dev-lxc-01",
+          status: "running",
+          maxmem: 1073741824, // 1GB
+          maxcpu: 1,
+          node: dbNode.name,
+          type: "lxc"
+        },
+        {
+          vmid: 201,
+          name: "dev-lxc-02",
+          status: "stopped",
+          maxmem: 2147483648, // 2GB
+          maxcpu: 2,
+          node: dbNode.name,
+          type: "lxc"
+        },
+        {
+          vmid: 202,
+          name: "dev-lxc-03",
+          status: "running",
+          maxmem: 4294967296, // 4GB
+          maxcpu: 2,
+          node: dbNode.name,
+          type: "lxc"
+        }
+      ]);
+    }
+    
+    // Production code below - only executes in production
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
@@ -791,6 +926,51 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
       verify_ssl: false
     };
     
+    // For development purposes only - in production, this would actually connect to Proxmox API
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    if (isDevelopment) {
+      // Simulate monitoring data
+      // Generate some sample monitoring data points for the last hour
+      const now = new Date();
+      const data = [];
+      
+      // Generate data points for the last hour (60 minutes)
+      for (let i = 60; i >= 0; i--) {
+        const time = new Date(now.getTime() - (i * 60000)).getTime() / 1000; // convert to unix timestamp
+        
+        // CPU usage - varies between 5-45%
+        const cpu = 5 + Math.random() * 40;
+        
+        // Memory usage - varies between 20-80%
+        const mem = 20 + Math.random() * 60;
+        
+        // Network traffic - varies randomly
+        const netin = Math.random() * 10000000;  // bytes per second
+        const netout = Math.random() * 5000000;  // bytes per second
+        
+        // Disk IO - varies randomly
+        const diskread = Math.random() * 1000000;  // bytes per second
+        const diskwrite = Math.random() * 2000000; // bytes per second
+        
+        data.push({
+          time,
+          cpu,
+          mem,
+          netin,
+          netout,
+          diskread,
+          diskwrite
+        });
+      }
+      
+      return res.json({
+        node: node.name,
+        data: data
+      });
+    }
+    
+    // Production code below - only executes in production
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,

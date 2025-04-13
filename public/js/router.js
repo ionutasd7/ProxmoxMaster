@@ -26,6 +26,9 @@ export class Router {
         this.app.loadAppData();
         this.app.views.containers.render();
       },
+      'settings': () => {
+        this.app.views.settings.render();
+      },
       'node-details': (params) => {
         this.app.loadAppData();
         this.app.views.nodes.renderDetails(params.id);

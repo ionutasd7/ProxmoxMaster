@@ -8,6 +8,9 @@ import { DashboardView } from './views/dashboard.js';
 import { NodesView } from './views/nodes.js';
 import { VMsView } from './views/vms.js';
 import { ContainersView } from './views/containers.js';
+import { StorageView } from './views/storage.js';
+import { NetworkView } from './views/network.js';
+import { SettingsView } from './views/settings.js';
 
 // Main Application Class
 class App {
@@ -37,7 +40,8 @@ class App {
       dashboard: new DashboardView(this),
       nodes: new NodesView(this),
       vms: new VMsView(this),
-      containers: new ContainersView(this)
+      containers: new ContainersView(this),
+      settings: new SettingsView(this)
     };
   }
   

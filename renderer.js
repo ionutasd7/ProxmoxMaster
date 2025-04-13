@@ -496,34 +496,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Handle adding a new Proxmox node
-  function handleAddNode(e) {
+  async function handleAddNode(e) {
     e.preventDefault();
     
     // Get form values
     const hostname = document.getElementById('node-hostname').value;
     const name = document.getElementById('node-name').value;
     const port = document.getElementById('node-port').value;
-    const apiUsername = document.getElementById('api-username').value;
-    const apiPassword = document.getElementById('api-password').value;
+    const username = document.getElementById('api-username').value;
+    const password = document.getElementById('api-password').value;
     const sshUsername = document.getElementById('ssh-username').value;
     const sshPassword = document.getElementById('ssh-password').value;
     
     // Create node object
     const newNode = {
-      id: Date.now(), // Use timestamp as unique ID
       name,
       hostname,
-      port,
-      apiUsername,
-      apiPassword,
-      sshUsername,
-      sshPassword,
-      status: 'connecting',
-      lastConnected: null
+      username, // Match the backend field name
+      password, // Match the backend field name
+      port: parseInt(port, 10),
+      ssh_username: sshUsername,
+      ssh_password: sshPassword,
+      ssl_verify: true,
+      node_status: 'connecting'
     };
-    
-    // Add node to state
-    state.nodes.push(newNode);
     
     // Show loading message
     const nodesContainer = document.getElementById('nodes-table-container');
@@ -536,18 +532,39 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
     
-    // Simulate connection (in real app, this would be an actual API call)
-    setTimeout(() => {
-      // Update node status
-      newNode.status = 'connected';
-      newNode.lastConnected = new Date();
+    try {
+      // Make API call to add the node
+      const response = await fetch('/api/nodes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newNode)
+      });
       
-      // Refresh the nodes table
-      refreshNodesTable();
+      if (!response.ok) {
+        throw new Error(`Failed to add node: ${response.statusText}`);
+      }
       
-      // Show success message
-      showNotification(`Successfully connected to ${name} (${hostname})`);
-    }, 2000);
+      const result = await response.json();
+      
+      if (result.success) {
+        // Update node in state
+        await loadApplicationData(); // Reload all data including the new node
+        
+        // Refresh the nodes table
+        refreshNodesTable();
+        
+        // Show success message
+        showNotification(`Successfully added node ${name} (${hostname})`);
+      } else {
+        throw new Error(result.error || 'Unknown error adding node');
+      }
+    } catch (error) {
+      console.error('Error adding node:', error);
+      showNotification(`Error adding node: ${error.message}`, 'error');
+      refreshNodesTable(); // Show the form again
+    }
   }
   
   // Refresh the nodes table based on current state
@@ -581,9 +598,9 @@ document.addEventListener('DOMContentLoaded', () => {
               <td>${node.hostname}</td>
               <td>${node.port}</td>
               <td>
-                ${node.status === 'connected' 
+                ${node.node_status === 'connected' || node.node_status === 'online'
                   ? `<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i> Connected</span>` 
-                  : node.status === 'connecting'
+                  : node.node_status === 'connecting'
                   ? `<span class="badge bg-warning"><i class="fas fa-sync fa-spin me-1"></i> Connecting</span>`
                   : `<span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i> Disconnected</span>`
                 }
@@ -614,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Handle node actions (view, edit, delete)
-  function handleNodeAction(e) {
+  async function handleNodeAction(e) {
     const nodeId = parseInt(e.currentTarget.dataset.nodeId);
     const action = e.currentTarget.dataset.action;
     const node = state.nodes.find(n => n.id === nodeId);
@@ -640,11 +657,36 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'delete':
         if (confirm(`Are you sure you want to remove ${node.name} (${node.hostname})?`)) {
-          // Remove node from state
-          state.nodes = state.nodes.filter(n => n.id !== nodeId);
-          // Refresh the nodes table
-          refreshNodesTable();
-          showNotification(`Node ${node.name} has been removed`, 'success');
+          try {
+            // Call the API to delete the node
+            const response = await fetch(`/api/nodes/${node.id}`, {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Failed to delete node: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              // Reload all data to sync with the server
+              await loadApplicationData();
+              
+              // Refresh the nodes table
+              refreshNodesTable();
+              
+              showNotification(`Node ${node.name} has been removed`, 'success');
+            } else {
+              throw new Error(result.error || 'Unknown error deleting node');
+            }
+          } catch (error) {
+            console.error('Error deleting node:', error);
+            showNotification(`Error deleting node: ${error.message}`, 'error');
+          }
         }
         break;
     }

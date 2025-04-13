@@ -2680,8 +2680,15 @@ iface eth1 inet static
       <div class="tab-content" id="templateTabsContent">
         <div class="tab-pane fade show active" id="vm-templates" role="tabpanel" aria-labelledby="vm-templates-tab">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="fas fa-server me-2"></i> Virtual Machine Templates</h5>
-            <button class="btn btn-primary btn-sm" id="add-vm-template">
+            <h5 class="mb-0">
+              <i class="fas fa-server me-2"></i> Virtual Machine Templates
+              <i class="fas fa-info-circle ms-2 text-info" 
+                 data-bs-toggle="tooltip" 
+                 title="VM templates define pre-configured resource profiles that can be applied when creating new virtual machines. These templates help standardize VM deployments and save time."></i>
+            </h5>
+            <button class="btn btn-primary btn-sm" id="add-vm-template" 
+                    data-bs-toggle="tooltip" 
+                    title="Create a new VM resource template with predefined CPU, memory and disk allocations">
               <i class="fas fa-plus me-2"></i> Add VM Template
             </button>
           </div>
@@ -2730,8 +2737,15 @@ iface eth1 inet static
         
         <div class="tab-pane fade" id="lxc-templates" role="tabpanel" aria-labelledby="lxc-templates-tab">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="fas fa-box me-2"></i> LXC Container Templates</h5>
-            <button class="btn btn-primary btn-sm" id="add-lxc-template">
+            <h5 class="mb-0">
+              <i class="fas fa-box me-2"></i> LXC Container Templates
+              <i class="fas fa-info-circle ms-2 text-info" 
+                 data-bs-toggle="tooltip" 
+                 title="LXC templates are lightweight resource profiles for container creation. They define CPU, memory, swap, and disk allocations for standardized container deployments."></i>
+            </h5>
+            <button class="btn btn-primary btn-sm" id="add-lxc-template"
+                    data-bs-toggle="tooltip" 
+                    title="Create a new LXC container resource template with predefined parameters">
               <i class="fas fa-plus me-2"></i> Add LXC Template
             </button>
           </div>
@@ -2788,6 +2802,11 @@ iface eth1 inet static
   
   // Set up event listeners for template management
   function setupTemplateEventListeners() {
+    // Initialize tooltips
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(tooltipTriggerEl => {
+      new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
     // Add VM template button
     const addVMTemplateBtn = document.getElementById('add-vm-template');
     if (addVMTemplateBtn) {

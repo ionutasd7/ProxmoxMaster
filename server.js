@@ -31,86 +31,90 @@ const pool = new Pool({
 // Initialize database tables
 async function initializeDatabase() {
   try {
-    // Check if users table exists, create if it doesn't
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        email VARCHAR(100),
-        is_admin BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT NOW()
+    // Check for admin user in existing users table
+    try {
+      const adminUser = await pool.query(
+        'SELECT * FROM users WHERE username = $1',
+        ['admin']
       );
-    `);
 
-    // Check if nodes table exists, create if it doesn't
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS nodes (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        api_host VARCHAR(255) NOT NULL,
-        api_port INTEGER DEFAULT 8006,
-        api_username VARCHAR(100) NOT NULL,
-        api_password VARCHAR(255) NOT NULL,
-        api_realm VARCHAR(50) DEFAULT 'pam',
-        ssh_host VARCHAR(255),
-        ssh_port INTEGER DEFAULT 22,
-        ssh_username VARCHAR(100),
-        ssh_password VARCHAR(255),
-        use_ssl BOOLEAN DEFAULT true,
-        verify_ssl BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT NOW(),
-        user_id INTEGER REFERENCES users(id)
-      );
-    `);
-
-    // Check if vm_templates table exists, create if it doesn't
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS vm_templates (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        cores INTEGER DEFAULT 1,
-        memory INTEGER DEFAULT 1024,
-        disk_size INTEGER DEFAULT 10,
-        os_type VARCHAR(50),
-        description TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        user_id INTEGER REFERENCES users(id)
-      );
-    `);
-
-    // Check if lxc_templates table exists, create if it doesn't
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS lxc_templates (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        cores INTEGER DEFAULT 1,
-        memory INTEGER DEFAULT 512,
-        disk_size INTEGER DEFAULT 8,
-        template VARCHAR(100),
-        description TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        user_id INTEGER REFERENCES users(id)
-      );
-    `);
-
-    // Create admin user if it doesn't exist
-    const adminUser = await pool.query(
-      'SELECT * FROM users WHERE username = $1',
-      ['admin']
-    );
-
-    if (adminUser.rowCount === 0) {
-      // Hash password 'admin'
-      const hashedPassword = await bcrypt.hash('admin', 10);
+      if (adminUser.rowCount === 0) {
+        // Hash password 'admin'
+        const hashedPassword = await bcrypt.hash('admin', 10);
+        
+        // Insert admin user
+        await pool.query(
+          'INSERT INTO users (username, password, email, is_admin) VALUES ($1, $2, $3, $4)',
+          ['admin', hashedPassword, 'admin@example.com', true]
+        );
+        
+        console.log('Admin user created');
+      }
+    } catch (userErr) {
+      console.error('Error with users table, it may not exist yet:', userErr);
+      
+      // Create users table if it doesn't exist
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username VARCHAR(50) UNIQUE NOT NULL,
+          password VARCHAR(255) NOT NULL,
+          email VARCHAR(100),
+          is_admin BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `);
       
       // Insert admin user
+      const hashedPassword = await bcrypt.hash('admin', 10);
       await pool.query(
         'INSERT INTO users (username, password, email, is_admin) VALUES ($1, $2, $3, $4)',
         ['admin', hashedPassword, 'admin@example.com', true]
       );
       
-      console.log('Admin user created');
+      console.log('Users table created and admin user created');
+    }
+    
+    // Check if template tables exist, create if they don't
+    try {
+      await pool.query('SELECT COUNT(*) FROM vm_templates');
+    } catch (err) {
+      // VM templates table doesn't exist, create it
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS vm_templates (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          cores INTEGER DEFAULT 1,
+          memory INTEGER DEFAULT 1024,
+          disk_size INTEGER DEFAULT 10,
+          os_type VARCHAR(50),
+          description TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          user_id INTEGER REFERENCES users(id)
+        );
+      `);
+      console.log('VM templates table created');
+    }
+    
+    // Check if LXC templates table exists
+    try {
+      await pool.query('SELECT COUNT(*) FROM lxc_templates');
+    } catch (err) {
+      // LXC templates table doesn't exist, create it
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS lxc_templates (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          cores INTEGER DEFAULT 1,
+          memory INTEGER DEFAULT 512,
+          disk_size INTEGER DEFAULT 8,
+          template VARCHAR(100),
+          description TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          user_id INTEGER REFERENCES users(id)
+        );
+      `);
+      console.log('LXC templates table created');
     }
 
     console.log('Database initialization complete');
@@ -157,8 +161,28 @@ app.post('/api/login', async (req, res) => {
 // Node management routes
 app.get('/api/nodes', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, api_host, api_port, api_username, api_realm, ssh_host, ssh_port, ssh_username, use_ssl, verify_ssl, created_at FROM nodes');
-    res.json(result.rows);
+    const result = await pool.query('SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes');
+    
+    // Map existing schema to expected format in the frontend
+    const mappedNodes = result.rows.map(node => ({
+      id: node.id,
+      name: node.name,
+      api_host: node.hostname,
+      api_port: node.port || 8006,
+      api_username: node.username,
+      api_password: node.password,
+      api_realm: 'pam',
+      ssh_host: node.hostname,
+      ssh_port: 22,
+      ssh_username: node.username,
+      ssh_password: node.password,
+      use_ssl: true,
+      verify_ssl: node.ssl_verify || false,
+      created_at: node.created_at,
+      status: node.node_status
+    }));
+    
+    res.json(mappedNodes);
   } catch (err) {
     console.error('Error fetching nodes:', err);
     res.status(500).json({ error: 'Failed to fetch nodes' });
@@ -168,10 +192,10 @@ app.get('/api/nodes', async (req, res) => {
 app.post('/api/nodes', async (req, res) => {
   const {
     name,
-    api_host,
-    api_port,
-    api_username,
-    api_password,
+    api_host, // hostname in our db
+    api_port, // port in our db
+    api_username, // username in our db
+    api_password, // password in our db
     api_realm,
     ssh_host,
     ssh_port,
@@ -185,21 +209,43 @@ app.post('/api/nodes', async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO nodes (
-        name, api_host, api_port, api_username, api_password, api_realm,
-        ssh_host, ssh_port, ssh_username, ssh_password, use_ssl, verify_ssl, user_id
+        name, hostname, port, username, password, ssl_verify, created_at
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING id, name, api_host, api_port, api_username, api_realm, ssh_host, ssh_port, ssh_username, use_ssl, verify_ssl, created_at`,
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      RETURNING id, name, hostname, port, username, created_at`,
       [
-        name, api_host, api_port, api_username, api_password, api_realm,
-        ssh_host, ssh_port, ssh_username, ssh_password, use_ssl, verify_ssl, user_id
+        name, 
+        api_host, // Use api_host as hostname
+        api_port || 8006, // Use api_port as port
+        api_username, // Use api_username as username
+        api_password, // Use api_password as password
+        verify_ssl || false // Use verify_ssl as ssl_verify
       ]
     );
     
-    res.status(201).json(result.rows[0]);
+    // Map to the expected format for the frontend
+    const node = result.rows[0];
+    const mappedNode = {
+      id: node.id,
+      name: node.name,
+      api_host: node.hostname,
+      api_port: node.port || 8006,
+      api_username: node.username,
+      api_password: null, // Don't send password back to client
+      api_realm: 'pam',
+      ssh_host: node.hostname,
+      ssh_port: 22,
+      ssh_username: node.username,
+      ssh_password: null, // Don't send password back to client
+      use_ssl: true,
+      verify_ssl: verify_ssl || false,
+      created_at: node.created_at
+    };
+    
+    res.status(201).json(mappedNode);
   } catch (err) {
     console.error('Error adding node:', err);
-    res.status(500).json({ error: 'Failed to add node' });
+    res.status(500).json({ error: 'Failed to add node: ' + err.message });
   }
 });
 
@@ -322,7 +368,7 @@ app.get('/api/nodes/:id', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT id, name, api_host, api_port, api_username, api_password, api_realm, ssh_host, ssh_port, ssh_username, ssh_password, use_ssl, verify_ssl FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -330,7 +376,24 @@ app.get('/api/nodes/:id', async (req, res) => {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const node = nodeResult.rows[0];
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      id: dbNode.id,
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      ssh_host: dbNode.hostname,
+      ssh_port: 22,
+      ssh_username: dbNode.username,
+      ssh_password: dbNode.password,
+      use_ssl: true,
+      verify_ssl: false
+    };
     
     // Connect to Proxmox API to get real-time data
     const protocol = node.use_ssl ? 'https' : 'http';
@@ -339,41 +402,42 @@ app.get('/api/nodes/:id', async (req, res) => {
       password: node.api_password
     };
     
-    const axiosInstance = axios.create({
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: node.verify_ssl
-      })
-    });
-    
-    // Get cluster status
-    const clusterResponse = await axiosInstance.get(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/cluster/status`,
-      { auth }
-    );
-    
-    // Get node status
-    const nodeResponse = await axiosInstance.get(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
-      { auth }
-    );
-    
-    res.json({
-      node: {
-        id: node.id,
-        name: node.name,
-        api_host: node.api_host,
-        api_port: node.api_port,
-        api_username: node.api_username,
-        api_realm: node.api_realm,
-        ssh_host: node.ssh_host,
-        ssh_port: node.ssh_port,
-        ssh_username: node.ssh_username,
-        use_ssl: node.use_ssl,
-        verify_ssl: node.verify_ssl
-      },
-      cluster: clusterResponse.data.data,
-      status: nodeResponse.data.data
-    });
+    try {
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // Get cluster status
+      const clusterResponse = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/cluster/status`,
+        { auth }
+      );
+      
+      // Get node status
+      const nodeResponse = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
+        { auth }
+      );
+      
+      res.json({
+        node: node,
+        cluster: clusterResponse.data.data,
+        status: nodeResponse.data.data
+      });
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API:', apiError);
+      
+      // Return the node data without Proxmox API data
+      res.json({
+        node: node,
+        cluster: null,
+        status: null,
+        error: 'Failed to connect to Proxmox API'
+      });
+    }
   } catch (err) {
     console.error('Error fetching node details:', err);
     res.status(500).json({ error: 'Failed to fetch node details' });
@@ -385,7 +449,7 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT api_host, api_port, api_username, api_password, api_realm, use_ssl, verify_ssl FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -393,27 +457,46 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const node = nodeResult.rows[0];
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     
-    // Connect to Proxmox API
-    const axiosInstance = axios.create({
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: node.verify_ssl
-      })
-    });
-    
-    // Get VMs from node
-    const response = await axiosInstance.get(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${req.params.nodename}/qemu`,
-      { auth }
-    );
-    
-    res.json(response.data.data);
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // Get VMs from node
+      const response = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/qemu`,
+        { auth }
+      );
+      
+      res.json(response.data.data || []);
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API:', apiError);
+      // Return empty array if we can't connect to API
+      res.json([]);
+    }
   } catch (err) {
     console.error('Error fetching VMs:', err);
     res.status(500).json({ error: 'Failed to fetch VMs' });
@@ -425,7 +508,7 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT api_host, api_port, api_username, api_password, api_realm, use_ssl, verify_ssl FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -433,27 +516,46 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const node = nodeResult.rows[0];
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     
-    // Connect to Proxmox API
-    const axiosInstance = axios.create({
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: node.verify_ssl
-      })
-    });
-    
-    // Get LXC containers from node
-    const response = await axiosInstance.get(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${req.params.nodename}/lxc`,
-      { auth }
-    );
-    
-    res.json(response.data.data);
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // Get LXC containers from node
+      const response = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/lxc`,
+        { auth }
+      );
+      
+      res.json(response.data.data || []);
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API:', apiError);
+      // Return empty array if we can't connect to API
+      res.json([]);
+    }
   } catch (err) {
     console.error('Error fetching containers:', err);
     res.status(500).json({ error: 'Failed to fetch containers' });
@@ -558,7 +660,7 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT name, api_host, api_port, api_username, api_password, api_realm, use_ssl, verify_ssl FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -566,37 +668,61 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const node = nodeResult.rows[0];
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
       username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     
-    // Connect to Proxmox API
-    const axiosInstance = axios.create({
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: node.verify_ssl
-      })
-    });
-    
-    // Get node RRD data for CPU, memory, network, etc.
-    const rrdResponse = await axiosInstance.get(
-      `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata`,
-      { 
-        params: {
-          timeframe: 'hour',
-          cf: 'AVERAGE'
-        },
-        auth 
-      }
-    );
-    
-    // Process and return the monitoring data
-    res.json({
-      node: node.name,
-      data: rrdResponse.data.data
-    });
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // Get node RRD data for CPU, memory, network, etc.
+      const rrdResponse = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata`,
+        { 
+          params: {
+            timeframe: 'hour',
+            cf: 'AVERAGE'
+          },
+          auth 
+        }
+      );
+      
+      // Process and return the monitoring data
+      res.json({
+        node: node.name,
+        data: rrdResponse.data.data || []
+      });
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API for monitoring data:', apiError);
+      // Return empty data if we can't connect to API
+      res.json({
+        node: node.name,
+        data: [],
+        error: 'Failed to connect to Proxmox API'
+      });
+    }
   } catch (err) {
     console.error('Error fetching monitoring data:', err);
     res.status(500).json({ error: 'Failed to fetch monitoring data' });

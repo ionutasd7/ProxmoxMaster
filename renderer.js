@@ -1,4 +1,7 @@
 // This file is used to initialize the application
+// We'll use the ResourceMonitoring component directly
+// It will be included via script tag in index.html
+
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize the app
   console.log('Proxmox Infrastructure Manager initializing...');

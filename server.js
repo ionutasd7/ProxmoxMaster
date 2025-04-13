@@ -59,146 +59,282 @@ app.post('/api/auth', (req, res) => {
 });
 
 // Nodes data endpoint
-app.get('/api/nodes', (req, res) => {
-  // Return empty nodes array - user will add nodes manually
-  res.json({
-    success: true,
-    nodes: []
-  });
+app.get('/api/nodes', async (req, res, next) => {
+  try {
+    const nodes = await db.nodeDB.getAllNodes();
+    res.json({
+      success: true,
+      nodes: nodes
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add node endpoint
+app.post('/api/nodes', async (req, res, next) => {
+  try {
+    const node = await db.nodeDB.createNode(req.body);
+    res.status(201).json({
+      success: true,
+      node: node
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update node endpoint
+app.put('/api/nodes/:id', async (req, res, next) => {
+  try {
+    const node = await db.nodeDB.updateNode(req.params.id, req.body);
+    if (!node) {
+      return res.status(404).json({ success: false, error: 'Node not found' });
+    }
+    res.json({
+      success: true,
+      node: node
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete node endpoint
+app.delete('/api/nodes/:id', async (req, res, next) => {
+  try {
+    const success = await db.nodeDB.deleteNode(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Node not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // VM data endpoint
-app.get('/api/vms', (req, res) => {
-  res.json({
-    success: true,
-    vms: [
-      {
-        id: 101,
-        name: 'web-server',
-        status: 'running',
-        node: 'pve1',
-        cpu: { cores: 2, usage: 0.15 },
-        memory: { total: 4096, used: 2150 }, // In MB
-        disk: { total: 32, used: 18.5 } // In GB
-      },
-      {
-        id: 102,
-        name: 'db-server',
-        status: 'running',
-        node: 'pve2',
-        cpu: { cores: 4, usage: 0.45 },
-        memory: { total: 16384, used: 12689 }, // In MB
-        disk: { total: 100, used: 76.2 } // In GB
-      },
-      {
-        id: 103,
-        name: 'mail-server',
-        status: 'stopped',
-        node: 'pve1',
-        cpu: { cores: 2, usage: 0 },
-        memory: { total: 4096, used: 0 }, // In MB
-        disk: { total: 50, used: 23.7 } // In GB
+app.get('/api/vms', async (req, res, next) => {
+  try {
+    const nodes = await db.nodeDB.getAllNodes();
+    const allVMs = [];
+    
+    // Get VMs from all nodes
+    for (const node of nodes) {
+      try {
+        // Try to connect to the node with stored credentials
+        const axios = require('axios');
+        const https = require('https');
+        const agent = new https.Agent({  
+          rejectUnauthorized: node.ssl_verify
+        });
+        
+        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/qemu`;
+        const authData = {
+          username: node.username,
+          password: node.password
+        };
+        
+        // First authenticate to get ticket
+        const authResponse = await axios.post(
+          `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
+          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            httpsAgent: agent
+          }
+        );
+        
+        if (authResponse.data && authResponse.data.data) {
+          const { ticket } = authResponse.data.data;
+          
+          // Now get VMs with the ticket
+          const vmResponse = await axios.get(url, {
+            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+            httpsAgent: agent
+          });
+          
+          if (vmResponse.data && vmResponse.data.data) {
+            // Transform VM data to match our application's format
+            const vms = vmResponse.data.data.map(vm => ({
+              id: vm.vmid,
+              name: vm.name,
+              status: vm.status,
+              node: node.name,
+              cpu: { cores: vm.cpus || 1, usage: vm.cpu || 0 },
+              memory: { total: vm.maxmem, used: vm.mem }, // In bytes
+              disk: { total: vm.maxdisk / (1024 * 1024 * 1024), used: vm.disk / (1024 * 1024 * 1024) } // Convert to GB
+            }));
+            
+            allVMs.push(...vms);
+          }
+        }
+      } catch (nodeError) {
+        console.error(`Error fetching VMs from node ${node.name}:`, nodeError.message);
+        // Continue with next node if one fails
       }
-    ]
-  });
+    }
+    
+    res.json({
+      success: true,
+      vms: allVMs
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Container data endpoint
-app.get('/api/containers', (req, res) => {
-  res.json({
-    success: true,
-    containers: [
-      {
-        id: 201,
-        name: 'nginx-proxy',
-        status: 'running',
-        node: 'pve1',
-        cpu: { cores: 1, usage: 0.08 },
-        memory: { total: 1024, used: 512 }, // In MB
-        disk: { total: 8, used: 3.2 }, // In GB
-        ip: '10.10.10.201'
-      },
-      {
-        id: 202,
-        name: 'redis-cache',
-        status: 'running',
-        node: 'pve2',
-        cpu: { cores: 2, usage: 0.24 },
-        memory: { total: 4096, used: 3174 }, // In MB
-        disk: { total: 16, used: 7.8 }, // In GB
-        ip: '10.10.10.202'
-      },
-      {
-        id: 203,
-        name: 'monitoring',
-        status: 'running',
-        node: 'pve3',
-        cpu: { cores: 2, usage: 0.15 },
-        memory: { total: 2048, used: 1536 }, // In MB
-        disk: { total: 20, used: 12.4 }, // In GB
-        ip: '10.10.10.203'
-      },
-      {
-        id: 204,
-        name: 'dev-env',
-        status: 'stopped',
-        node: 'pve2',
-        cpu: { cores: 2, usage: 0 },
-        memory: { total: 4096, used: 0 }, // In MB
-        disk: { total: 30, used: 18.6 }, // In GB
-        ip: '10.10.10.204'
+app.get('/api/containers', async (req, res, next) => {
+  try {
+    const nodes = await db.nodeDB.getAllNodes();
+    const allContainers = [];
+    
+    // Get containers from all nodes
+    for (const node of nodes) {
+      try {
+        // Try to connect to the node with stored credentials
+        const axios = require('axios');
+        const https = require('https');
+        const agent = new https.Agent({  
+          rejectUnauthorized: node.ssl_verify
+        });
+        
+        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/lxc`;
+        const authData = {
+          username: node.username,
+          password: node.password
+        };
+        
+        // First authenticate to get ticket
+        const authResponse = await axios.post(
+          `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
+          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            httpsAgent: agent
+          }
+        );
+        
+        if (authResponse.data && authResponse.data.data) {
+          const { ticket } = authResponse.data.data;
+          
+          // Now get containers with the ticket
+          const containerResponse = await axios.get(url, {
+            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+            httpsAgent: agent
+          });
+          
+          if (containerResponse.data && containerResponse.data.data) {
+            // Transform container data to match our application's format
+            const containers = containerResponse.data.data.map(container => ({
+              id: container.vmid,
+              name: container.name,
+              status: container.status,
+              node: node.name,
+              cpu: { cores: container.cpus || 1, usage: container.cpu || 0 },
+              memory: { 
+                total: container.maxmem / (1024 * 1024), // Convert bytes to MB
+                used: container.mem / (1024 * 1024) 
+              },
+              disk: { 
+                total: container.maxdisk / (1024 * 1024 * 1024), // Convert bytes to GB
+                used: container.disk / (1024 * 1024 * 1024) 
+              },
+              ip: container.ip || 'N/A'
+            }));
+            
+            allContainers.push(...containers);
+          }
+        }
+      } catch (nodeError) {
+        console.error(`Error fetching containers from node ${node.name}:`, nodeError.message);
+        // Continue with next node if one fails
       }
-    ]
-  });
+    }
+    
+    res.json({
+      success: true,
+      containers: allContainers
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Network data endpoint
-app.get('/api/network', (req, res) => {
-  res.json({
-    success: true,
-    interfaces: [
-      {
-        name: 'eth0',
-        node: 'pve1',
-        ip: '10.55.1.10',
-        netmask: '255.255.255.0',
-        mac: '00:1A:2B:3C:4D:5E',
-        status: 'up',
-        trafficIn: '4.5 MB/s',
-        trafficOut: '2.8 MB/s'
-      },
-      {
-        name: 'eth1',
-        node: 'pve1',
-        ip: '192.168.1.10',
-        netmask: '255.255.255.0',
-        mac: '00:1A:2B:3C:4D:5F',
-        status: 'up',
-        trafficIn: '1.2 MB/s',
-        trafficOut: '0.8 MB/s'
-      },
-      {
-        name: 'eth0',
-        node: 'pve2',
-        ip: '10.55.1.11',
-        netmask: '255.255.255.0',
-        mac: '00:2B:3C:4D:5E:6F',
-        status: 'up',
-        trafficIn: '3.8 MB/s',
-        trafficOut: '2.1 MB/s'
-      },
-      {
-        name: 'eth0',
-        node: 'pve3',
-        ip: '10.55.1.12',
-        netmask: '255.255.255.0',
-        mac: '00:3C:4D:5E:6F:7G',
-        status: 'up',
-        trafficIn: '2.5 MB/s',
-        trafficOut: '1.7 MB/s'
+app.get('/api/network', async (req, res, next) => {
+  try {
+    const nodes = await db.nodeDB.getAllNodes();
+    const allInterfaces = [];
+    
+    // Get network interfaces from all nodes
+    for (const node of nodes) {
+      try {
+        // Try to connect to the node with stored credentials
+        const axios = require('axios');
+        const https = require('https');
+        const agent = new https.Agent({  
+          rejectUnauthorized: node.ssl_verify
+        });
+        
+        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/network`;
+        const authData = {
+          username: node.username,
+          password: node.password
+        };
+        
+        // First authenticate to get ticket
+        const authResponse = await axios.post(
+          `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
+          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            httpsAgent: agent
+          }
+        );
+        
+        if (authResponse.data && authResponse.data.data) {
+          const { ticket } = authResponse.data.data;
+          
+          // Now get network interfaces with the ticket
+          const networkResponse = await axios.get(url, {
+            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+            httpsAgent: agent
+          });
+          
+          if (networkResponse.data && networkResponse.data.data) {
+            // Transform network data to match our application's format
+            const interfaces = networkResponse.data.data
+              .filter(iface => iface.type === 'eth' || iface.type === 'bridge')
+              .map(iface => ({
+                name: iface.iface,
+                node: node.name,
+                ip: iface.address || 'N/A',
+                netmask: iface.netmask || 'N/A',
+                mac: iface.hwaddr || 'N/A',
+                status: iface.active ? 'up' : 'down',
+                type: iface.type,
+                trafficIn: '- MB/s', // Traffic data isn't available in this endpoint
+                trafficOut: '- MB/s'  // We would need to use node-specific commands to get this
+              }));
+            
+            allInterfaces.push(...interfaces);
+          }
+        }
+      } catch (nodeError) {
+        console.error(`Error fetching network interfaces from node ${node.name}:`, nodeError.message);
+        // Continue with next node if one fails
       }
-    ]
-  });
+    }
+    
+    res.json({
+      success: true,
+      interfaces: allInterfaces
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Updates data endpoint

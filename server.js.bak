@@ -603,7 +603,7 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
     
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
-      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     
@@ -662,7 +662,7 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
     
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
-      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     
@@ -815,7 +815,7 @@ app.get('/api/monitoring/node/:id', async (req, res) => {
     
     const protocol = node.use_ssl ? 'https' : 'http';
     const auth = {
-      username: node.api_username.includes("@") ? node.api_username : `${node.api_username}@${node.api_realm}`,
+      username: `${node.api_username}@${node.api_realm}`,
       password: node.api_password
     };
     

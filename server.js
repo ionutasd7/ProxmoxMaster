@@ -26,6 +26,21 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Global VMs and containers endpoints (used for dashboard data)
+app.get('/api/vms', (req, res) => {
+  res.json({
+    success: true,
+    vms: [] // Initially empty, will be populated when nodes are added
+  });
+});
+
+app.get('/api/containers', (req, res) => {
+  res.json({
+    success: true,
+    containers: [] // Initially empty, will be populated when nodes are added
+  });
+});
+
 // Configure middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));

@@ -109,11 +109,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Fetch data from API
   async function fetchData(endpoint) {
     try {
+      console.log(`Fetching data from ${endpoint}...`);
       const response = await fetch(endpoint);
+      
       if (!response.ok) {
-        throw new Error(`Network response was not ok: ${response.status}`);
+        const error = new Error(`Network response was not ok: ${response.status}`);
+        console.error(`Error fetching data from ${endpoint}:`, error);
+        return { success: false, error: error.message };
       }
-      return await response.json();
+      
+      const data = await response.json();
+      console.log(`Data received from ${endpoint}:`, data);
+      return data;
     } catch (error) {
       console.error(`Error fetching data from ${endpoint}:`, error);
       return { success: false, error: error.message };
@@ -127,26 +134,41 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       // Fetch nodes data
       const nodesResponse = await fetchData('/api/nodes');
-      if (nodesResponse.success) {
-        state.nodes = nodesResponse.nodes;
-      } else {
+      console.log('Nodes response:', nodesResponse);
+      // The nodes endpoint directly returns an array of nodes or an object with error
+      if (Array.isArray(nodesResponse)) {
+        state.nodes = nodesResponse;
+      } else if (nodesResponse.error) {
         console.error('Failed to load nodes:', nodesResponse.error);
+      } else {
+        console.log('Unknown nodes response format:', nodesResponse);
+        state.nodes = [];
       }
       
       // Fetch VMs data
       const vmsResponse = await fetchData('/api/vms');
-      if (vmsResponse.success) {
+      console.log('VMs response:', vmsResponse);
+      // The VMs endpoint returns {success: true, vms: []} format
+      if (vmsResponse && vmsResponse.success && Array.isArray(vmsResponse.vms)) {
         state.vms = vmsResponse.vms;
-      } else {
+      } else if (vmsResponse && vmsResponse.error) {
         console.error('Failed to load VMs:', vmsResponse.error);
+      } else {
+        console.log('Unknown VMs response format:', vmsResponse);
+        state.vms = [];
       }
       
       // Fetch containers data
       const containersResponse = await fetchData('/api/containers');
-      if (containersResponse.success) {
+      console.log('Containers response:', containersResponse);
+      // The containers endpoint returns {success: true, containers: []} format
+      if (containersResponse && containersResponse.success && Array.isArray(containersResponse.containers)) {
         state.containers = containersResponse.containers;
-      } else {
+      } else if (containersResponse && containersResponse.error) {
         console.error('Failed to load containers:', containersResponse.error);
+      } else {
+        console.log('Unknown containers response format:', containersResponse);
+        state.containers = [];
       }
       
       // Display the dashboard with loaded data

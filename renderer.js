@@ -3561,6 +3561,482 @@ iface eth1 inet static
     }
   }
   
+  // Load batch operations view
+  function loadBatchOperationsView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('Batch Operations')}
+      
+      <div class="row mb-4">
+        <div class="col-lg-12">
+          <div class="card glow-border">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="fas fa-tasks me-2"></i> MANAGE MULTIPLE RESOURCES</h5>
+              <div>
+                <button class="btn btn-sm btn-outline-primary glow-border" id="refresh-batch-resources">
+                  <i class="fas fa-sync me-2"></i> Refresh
+                </button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <div class="form-group mb-3">
+                    <label class="form-label">Filter By Node</label>
+                    <select class="form-select" id="batch-filter-node">
+                      <option value="all">All Nodes</option>
+                      ${state.nodes.map(node => `<option value="${node.name}">${node.name} (${node.hostname})</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="form-group mb-3">
+                    <label class="form-label">Filter By Type</label>
+                    <select class="form-select" id="batch-filter-type">
+                      <option value="all">All Resources</option>
+                      <option value="vm">Virtual Machines</option>
+                      <option value="lxc">Containers</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="table-responsive">
+                <table class="table table-dark table-hover">
+                  <thead>
+                    <tr>
+                      <th width="40px">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" id="select-all-resources">
+                          <label class="form-check-label" for="select-all-resources"></label>
+                        </div>
+                      </th>
+                      <th>Name</th>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Node</th>
+                      <th>Status</th>
+                      <th>Resources</th>
+                    </tr>
+                  </thead>
+                  <tbody id="batch-resources-body">
+                    <tr>
+                      <td colspan="7" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading resources...</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              <div class="alert alert-info bg-transparent glow-border mt-3">
+                <i class="fas fa-info-circle me-2"></i> Select multiple resources to perform actions on them simultaneously.
+              </div>
+            </div>
+            <div class="card-footer">
+              <div class="d-flex gap-2">
+                <div class="dropdown">
+                  <button class="btn btn-outline-primary dropdown-toggle glow-border" type="button" id="batchPowerActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-power-off me-2"></i> Power Actions
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="batchPowerActionsDropdown">
+                    <li><button class="dropdown-item" data-batch-action="start"><i class="fas fa-play me-2 text-success"></i> Start</button></li>
+                    <li><button class="dropdown-item" data-batch-action="shutdown"><i class="fas fa-power-off me-2 text-warning"></i> Shutdown</button></li>
+                    <li><button class="dropdown-item" data-batch-action="stop"><i class="fas fa-stop me-2 text-danger"></i> Stop</button></li>
+                    <li><button class="dropdown-item" data-batch-action="restart"><i class="fas fa-sync me-2 text-info"></i> Restart</button></li>
+                  </ul>
+                </div>
+                
+                <div class="dropdown">
+                  <button class="btn btn-outline-primary dropdown-toggle glow-border" type="button" id="batchSnapshotActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-camera me-2"></i> Snapshot Actions
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="batchSnapshotActionsDropdown">
+                    <li><button class="dropdown-item" data-batch-action="create-snapshot"><i class="fas fa-plus me-2 text-success"></i> Create Snapshot</button></li>
+                  </ul>
+                </div>
+                
+                <div class="dropdown">
+                  <button class="btn btn-outline-primary dropdown-toggle glow-border" type="button" id="batchBackupActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-save me-2"></i> Backup Actions
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="batchBackupActionsDropdown">
+                    <li><button class="dropdown-item" data-batch-action="create-backup"><i class="fas fa-plus me-2 text-success"></i> Create Backup</button></li>
+                  </ul>
+                </div>
+                
+                <div class="dropdown ms-auto">
+                  <button class="btn btn-outline-danger dropdown-toggle glow-border" type="button" id="batchDangerActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-exclamation-triangle me-2"></i> Danger Zone
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="batchDangerActionsDropdown">
+                    <li><button class="dropdown-item" data-batch-action="delete"><i class="fas fa-trash me-2 text-danger"></i> Delete</button></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    document.getElementById('select-all-resources').addEventListener('change', (e) => {
+      // Select or deselect all checkboxes
+      const isChecked = e.target.checked;
+      document.querySelectorAll('#batch-resources-body input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = isChecked;
+      });
+    });
+    
+    // Placeholder for batch operations demonstration
+    setTimeout(() => {
+      // Display sample VMs and containers
+      const batchResourcesBody = document.getElementById('batch-resources-body');
+      if (state.nodes.length === 0) {
+        batchResourcesBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center">
+              <div class="alert alert-warning mb-0">
+                <i class="fas fa-exclamation-triangle me-2"></i> No nodes have been added yet. Return to the dashboard to add your first Proxmox node.
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      // Sample resources for demonstration
+      const sampleResources = [
+        { id: 100, name: 'vm-web01', type: 'vm', node: state.nodes[0].name, status: 'running', cpu: 2, memory: 2048, disk: 20 },
+        { id: 101, name: 'vm-db01', type: 'vm', node: state.nodes[0].name, status: 'stopped', cpu: 4, memory: 4096, disk: 40 },
+        { id: 102, name: 'lxc-app01', type: 'lxc', node: state.nodes[0].name, status: 'running', cpu: 1, memory: 512, disk: 10 },
+        { id: 103, name: 'vm-test01', type: 'vm', node: state.nodes[0].name, status: 'running', cpu: 2, memory: 1024, disk: 15 },
+        { id: 104, name: 'lxc-proxy01', type: 'lxc', node: state.nodes[0].name, status: 'running', cpu: 1, memory: 256, disk: 5 }
+      ];
+      
+      batchResourcesBody.innerHTML = sampleResources.map(resource => `
+        <tr>
+          <td>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="select-resource-${resource.id}">
+              <label class="form-check-label" for="select-resource-${resource.id}"></label>
+            </div>
+          </td>
+          <td>${resource.name}</td>
+          <td>${resource.id}</td>
+          <td>${resource.type === 'vm' ? 'Virtual Machine' : 'Container'}</td>
+          <td>${resource.node}</td>
+          <td>
+            ${resource.status === 'running' 
+              ? `<span class="badge bg-success"><i class="fas fa-circle me-1"></i> Running</span>` 
+              : `<span class="badge bg-danger"><i class="fas fa-circle me-1"></i> Stopped</span>`
+            }
+          </td>
+          <td>
+            <span data-bs-toggle="tooltip" title="CPU Cores"><i class="fas fa-microchip me-1"></i> ${resource.cpu}</span> |
+            <span data-bs-toggle="tooltip" title="Memory"><i class="fas fa-memory me-1"></i> ${resource.memory} MB</span> |
+            <span data-bs-toggle="tooltip" title="Disk Space"><i class="fas fa-hdd me-1"></i> ${resource.disk} GB</span>
+          </td>
+        </tr>
+      `).join('');
+      
+      // Add event listeners for batch actions
+      document.querySelectorAll('[data-batch-action]').forEach(button => {
+        button.addEventListener('click', (e) => {
+          const action = e.currentTarget.dataset.batchAction;
+          const selectedResources = [];
+          
+          document.querySelectorAll('#batch-resources-body input[type="checkbox"]:checked').forEach(checkbox => {
+            const resourceId = checkbox.id.replace('select-resource-', '');
+            selectedResources.push(resourceId);
+          });
+          
+          if (selectedResources.length === 0) {
+            showNotification('Please select at least one resource', 'error');
+            return;
+          }
+          
+          // Show confirmation dialog for destructive actions
+          if (['stop', 'delete'].includes(action)) {
+            if (!confirm(`Are you sure you want to ${action} ${selectedResources.length} resource(s)?`)) {
+              return;
+            }
+          }
+          
+          showNotification(`Performing ${action} on ${selectedResources.length} resource(s)`, 'info');
+          
+          // Simulate action in progress
+          setTimeout(() => {
+            showNotification(`Successfully performed ${action} on ${selectedResources.length} resource(s)`, 'success');
+          }, 2000);
+        });
+      });
+      
+      // Initialize tooltips
+      const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+      });
+    }, 1000);
+  }
+  
+  // Load user management view
+  function loadUserManagementView() {
+    const mainContent = document.querySelector('.main-content');
+    
+    mainContent.innerHTML = `
+      ${getCommonHeader('User Management')}
+      
+      <div class="row mb-4">
+        <div class="col-md-8 mb-4">
+          <div class="card glow-border">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="fas fa-users me-2"></i> USERS</h5>
+              <div>
+                <button class="btn btn-sm btn-outline-primary glow-border" id="add-user-btn">
+                  <i class="fas fa-user-plus me-2"></i> Add User
+                </button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-dark table-hover">
+                  <thead>
+                    <tr>
+                      <th>Username</th>
+                      <th>Role</th>
+                      <th>Last Login</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>admin</td>
+                      <td><span class="badge bg-primary">Administrator</span></td>
+                      <td>Now</td>
+                      <td><span class="badge bg-success">Active</span></td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-warning" data-user-action="edit" data-username="admin">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-danger" data-user-action="disable" data-username="admin" disabled>
+                            <i class="fas fa-ban"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>operator</td>
+                      <td><span class="badge bg-info">Operator</span></td>
+                      <td>2023-04-12 14:32</td>
+                      <td><span class="badge bg-success">Active</span></td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-warning" data-user-action="edit" data-username="operator">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-danger" data-user-action="disable" data-username="operator">
+                            <i class="fas fa-ban"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>viewer</td>
+                      <td><span class="badge bg-secondary">Viewer</span></td>
+                      <td>2023-04-10 09:15</td>
+                      <td><span class="badge bg-success">Active</span></td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-warning" data-user-action="edit" data-username="viewer">
+                            <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-danger" data-user-action="disable" data-username="viewer">
+                            <i class="fas fa-ban"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+          <div class="card glow-border">
+            <div class="card-header">
+              <h5 class="mb-0"><i class="fas fa-user-shield me-2"></i> ACCESS CONTROL</h5>
+            </div>
+            <div class="card-body">
+              <h6 class="mb-3">User Roles</h6>
+              
+              <div class="mb-3">
+                <div class="card bg-dark mb-2">
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span><span class="badge bg-primary me-2">Administrator</span></span>
+                      <small class="text-white-50">Full access</small>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="card bg-dark mb-2">
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span><span class="badge bg-info me-2">Operator</span></span>
+                      <small class="text-white-50">Manage VMs & containers</small>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="card bg-dark mb-2">
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span><span class="badge bg-secondary me-2">Viewer</span></span>
+                      <small class="text-white-50">Read-only access</small>
+                    </div>
+                  </div>
+                </div>
+                
+                <button class="btn btn-sm btn-outline-primary glow-border mt-3 w-100" id="manage-roles-btn">
+                  <i class="fas fa-cog me-2"></i> Manage Roles
+                </button>
+              </div>
+              
+              <h6 class="mb-3 mt-4">Two-Factor Authentication</h6>
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="enable-2fa" checked>
+                <label class="form-check-label" for="enable-2fa">Enable for Administrators</label>
+              </div>
+              
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="enable-2fa-operators">
+                <label class="form-check-label" for="enable-2fa-operators">Enable for Operators</label>
+              </div>
+              
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="enable-2fa-viewers">
+                <label class="form-check-label" for="enable-2fa-viewers">Enable for Viewers</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- User activity / audit log -->
+      <div class="card glow-border">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="fas fa-history me-2"></i> ACTIVITY LOG</h5>
+          <div>
+            <button class="btn btn-sm btn-outline-primary glow-border" id="refresh-activity-log">
+              <i class="fas fa-sync me-2"></i> Refresh
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>IP Address</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2023-04-13 10:15:23</td>
+                  <td>admin</td>
+                  <td>Login</td>
+                  <td>System</td>
+                  <td><span class="badge bg-success">Success</span></td>
+                  <td>192.168.1.100</td>
+                </tr>
+                <tr>
+                  <td>2023-04-13 10:16:05</td>
+                  <td>admin</td>
+                  <td>Create VM</td>
+                  <td>vm-test01 (ID: 103)</td>
+                  <td><span class="badge bg-success">Success</span></td>
+                  <td>192.168.1.100</td>
+                </tr>
+                <tr>
+                  <td>2023-04-13 10:20:45</td>
+                  <td>admin</td>
+                  <td>Start VM</td>
+                  <td>vm-test01 (ID: 103)</td>
+                  <td><span class="badge bg-success">Success</span></td>
+                  <td>192.168.1.100</td>
+                </tr>
+                <tr>
+                  <td>2023-04-12 14:32:10</td>
+                  <td>operator</td>
+                  <td>Login</td>
+                  <td>System</td>
+                  <td><span class="badge bg-success">Success</span></td>
+                  <td>192.168.1.101</td>
+                </tr>
+                <tr>
+                  <td>2023-04-12 14:35:22</td>
+                  <td>operator</td>
+                  <td>Create Container</td>
+                  <td>lxc-proxy01 (ID: 104)</td>
+                  <td><span class="badge bg-success">Success</span></td>
+                  <td>192.168.1.101</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    document.getElementById('add-user-btn').addEventListener('click', () => {
+      showNotification('Add user functionality will be implemented in the next version', 'info');
+    });
+    
+    document.getElementById('manage-roles-btn').addEventListener('click', () => {
+      showNotification('Role management will be implemented in the next version', 'info');
+    });
+    
+    document.querySelectorAll('[data-user-action]').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const action = e.currentTarget.dataset.userAction;
+        const username = e.currentTarget.dataset.username;
+        
+        if (action === 'edit') {
+          showNotification(`Edit user ${username} will be implemented in the next version`, 'info');
+        } else if (action === 'disable') {
+          if (confirm(`Are you sure you want to disable user ${username}?`)) {
+            showNotification(`User ${username} has been disabled`, 'success');
+            // Update UI to show disabled user
+            e.currentTarget.closest('tr').querySelector('td:nth-child(4) .badge').className = 'badge bg-danger';
+            e.currentTarget.closest('tr').querySelector('td:nth-child(4) .badge').textContent = 'Disabled';
+            e.currentTarget.innerHTML = '<i class="fas fa-check"></i>';
+            e.currentTarget.dataset.userAction = 'enable';
+          }
+        }
+      });
+    });
+    
+    document.getElementById('refresh-activity-log').addEventListener('click', () => {
+      showNotification('Activity log refreshed', 'info');
+    });
+  }
+  
   // Start the application with the login screen
   displayLogin();
 });

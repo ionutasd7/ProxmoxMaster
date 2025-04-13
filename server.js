@@ -618,10 +618,10 @@ app.post('/api/nodes', async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO nodes (
-        name, hostname, port, username, password, ssl_verify, created_at
+        name, hostname, port, username, password, ssl_verify, status, created_at
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
-      RETURNING id, name, hostname, port, username, created_at`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      RETURNING id, name, hostname, port, username, status, created_at`,
       [
         name, 
         api_host, // Use api_host as hostname

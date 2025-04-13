@@ -1,14 +1,32 @@
 // Simple server for Proxmox Infrastructure Manager
 const express = require('express');
 const path = require('path');
+const bcrypt = require('bcrypt');
+
+// Import database module
+const db = require('./db');
 
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Initialize database
+db.initializeDatabase().catch(err => {
+  console.error('Failed to initialize database:', err);
+});
+
 // Middleware
 app.use(express.static(path.join(__dirname, '.')));
 app.use(express.json());
+
+// Error handler middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({
+    success: false,
+    error: err.message || 'Internal Server Error'
+  });
+});
 
 // API status endpoint
 app.get('/api/status', (req, res) => {
@@ -204,6 +222,158 @@ app.get('/api/updates', (req, res) => {
       ]
     }
   });
+});
+
+// VM Templates API endpoints
+app.get('/api/templates/vm', async (req, res, next) => {
+  try {
+    const templates = await db.vmTemplateDB.getAllVMTemplates();
+    res.json(templates);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/templates/vm/:id', async (req, res, next) => {
+  try {
+    const template = await db.vmTemplateDB.getVMTemplateById(req.params.id);
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    res.json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/templates/vm', async (req, res, next) => {
+  try {
+    const templateData = {
+      name: req.body.name,
+      profile_type: req.body.profile_type,
+      cores: req.body.cores,
+      memory: req.body.memory,
+      disk: req.body.disk,
+      template_description: req.body.template_description || ''
+    };
+    
+    const template = await db.vmTemplateDB.createVMTemplate(templateData);
+    res.status(201).json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/templates/vm/:id', async (req, res, next) => {
+  try {
+    const templateData = {
+      name: req.body.name,
+      profile_type: req.body.profile_type,
+      cores: req.body.cores,
+      memory: req.body.memory,
+      disk: req.body.disk,
+      template_description: req.body.template_description || ''
+    };
+    
+    const template = await db.vmTemplateDB.updateVMTemplate(req.params.id, templateData);
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    
+    res.json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/templates/vm/:id', async (req, res, next) => {
+  try {
+    const success = await db.vmTemplateDB.deleteVMTemplate(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// LXC Templates API endpoints
+app.get('/api/templates/lxc', async (req, res, next) => {
+  try {
+    const templates = await db.lxcTemplateDB.getAllLXCTemplates();
+    res.json(templates);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/templates/lxc/:id', async (req, res, next) => {
+  try {
+    const template = await db.lxcTemplateDB.getLXCTemplateById(req.params.id);
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    res.json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/templates/lxc', async (req, res, next) => {
+  try {
+    const templateData = {
+      name: req.body.name,
+      profile_type: req.body.profile_type,
+      cores: req.body.cores,
+      memory: req.body.memory,
+      swap: req.body.swap,
+      disk: req.body.disk,
+      template_description: req.body.template_description || ''
+    };
+    
+    const template = await db.lxcTemplateDB.createLXCTemplate(templateData);
+    res.status(201).json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/templates/lxc/:id', async (req, res, next) => {
+  try {
+    const templateData = {
+      name: req.body.name,
+      profile_type: req.body.profile_type,
+      cores: req.body.cores,
+      memory: req.body.memory,
+      swap: req.body.swap,
+      disk: req.body.disk,
+      template_description: req.body.template_description || ''
+    };
+    
+    const template = await db.lxcTemplateDB.updateLXCTemplate(req.params.id, templateData);
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    
+    res.json(template);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/templates/lxc/:id', async (req, res, next) => {
+  try {
+    const success = await db.lxcTemplateDB.deleteLXCTemplate(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Serve the main HTML file for all other paths

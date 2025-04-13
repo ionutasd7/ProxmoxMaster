@@ -110,6 +110,18 @@ export class API {
   }
   
   /**
+   * Update user settings
+   * @param {Object} userData - User data to update
+   * @returns {Promise<Object>} Updated user data
+   */
+  async updateUserSettings(userData) {
+    return this.request('/api/user', {
+      method: 'PUT',
+      body: userData
+    });
+  }
+  
+  /**
    * Logout user
    * @returns {Promise<Object>} Logout status
    */
@@ -266,5 +278,23 @@ export class API {
    */
   async getLXCTemplates() {
     return this.request('/api/templates/lxc');
+  }
+  
+  /**
+   * Get node storage
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Object>} Storage data
+   */
+  async getNodeStorage(nodeId) {
+    return this.request(`/api/nodes/${nodeId}/storage`);
+  }
+  
+  /**
+   * Get node network
+   * @param {number} nodeId - Node ID
+   * @returns {Promise<Object>} Network data
+   */
+  async getNodeNetwork(nodeId) {
+    return this.request(`/api/nodes/${nodeId}/network`);
   }
 }

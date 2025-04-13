@@ -148,6 +148,76 @@ app.get('/api/user', (req, res) => {
   }
 });
 
+// Update user settings
+app.put('/api/user', async (req, res) => {
+  // Check if user is authenticated
+  if (!req.session || !req.session.isAuthenticated || !req.session.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const { email, currentPassword, newPassword } = req.body;
+  const userId = req.session.user.id;
+  
+  try {
+    // If email is provided, update it
+    if (email) {
+      await pool.query(
+        'UPDATE users SET email = $1 WHERE id = $2',
+        [email, userId]
+      );
+    }
+    
+    // If changing password
+    if (currentPassword && newPassword) {
+      // Verify current password
+      const user = await pool.query(
+        'SELECT password FROM users WHERE id = $1',
+        [userId]
+      );
+      
+      if (user.rowCount === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      const passwordMatch = await bcrypt.compare(currentPassword, user.rows[0].password);
+      
+      if (!passwordMatch) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+      
+      // Hash and update new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      await pool.query(
+        'UPDATE users SET password = $1 WHERE id = $2',
+        [hashedPassword, userId]
+      );
+    }
+    
+    // Get updated user data
+    const updatedUser = await pool.query(
+      'SELECT id, username, email, is_admin, created_at FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (updatedUser.rowCount === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Update session with new user data
+    req.session.user = updatedUser.rows[0];
+    
+    res.json({ 
+      success: true,
+      message: 'User settings updated successfully',
+      user: updatedUser.rows[0]
+    });
+  } catch (err) {
+    console.error('Error updating user settings:', err);
+    res.status(500).json({ error: 'Failed to update user settings' });
+  }
+});
+
 // Logout endpoint
 app.post('/api/logout', (req, res) => {
   req.session.destroy((err) => {
@@ -1077,6 +1147,96 @@ app.get('/api/nodes/:id/containers', async (req, res) => {
   }
 });
 
+// LXC container actions (start, stop, restart)
+app.post('/api/nodes/:nodeId/containers/:containerId/:action', async (req, res) => {
+  try {
+    const { nodeId, containerId, action } = req.params;
+    
+    // Validate action
+    if (!['start', 'stop', 'restart'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action. Supported actions: start, stop, restart' });
+    }
+    
+    // Get node details from database
+    const nodeResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
+      [nodeId]
+    );
+    
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
+    const protocol = node.use_ssl ? 'https' : 'http';
+    
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 10000 // Longer timeout for container operations
+      });
+      
+      // First authenticate to get a ticket
+      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+      
+      // Map our action names to Proxmox API actions
+      const proxmoxAction = action === 'restart' ? 'reset' : action;
+      
+      // Perform the container action
+      const response = await axiosInstance.post(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc/${containerId}/status/${proxmoxAction}`,
+        {}, // Empty body, as parameters are in URL
+        { 
+          headers: {
+            'Cookie': `PVEAuthCookie=${ticket}`,
+            'CSRFPreventionToken': csrfToken
+          }
+        }
+      );
+      
+      res.json({
+        success: true,
+        message: `Container ${action} operation initiated successfully`,
+        data: response.data
+      });
+    } catch (apiError) {
+      console.error(`Error performing container ${action} operation:`, apiError);
+      
+      let errorMessage = `Failed to ${action} container`;
+      if (apiError.response && apiError.response.data) {
+        errorMessage += `: ${apiError.response.data.message || JSON.stringify(apiError.response.data)}`;
+      }
+      
+      res.status(500).json({ 
+        success: false,
+        error: errorMessage
+      });
+    }
+  } catch (err) {
+    console.error(`Error in container ${req.params.action} operation:`, err);
+    res.status(500).json({ 
+      success: false,
+      error: `Failed to perform ${req.params.action} operation`
+    });
+  }
+});
+
 // Template management routes
 app.get('/api/templates/vm', async (req, res) => {
   try {
@@ -1167,6 +1327,144 @@ app.delete('/api/templates/lxc/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting LXC template:', err);
     res.status(500).json({ error: 'Failed to delete LXC template' });
+  }
+});
+
+// Storage management routes
+app.get('/api/nodes/:nodeId/storage', async (req, res) => {
+  try {
+    // Get node details from database
+    const nodeResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
+      [req.params.nodeId]
+    );
+    
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
+    const protocol = node.use_ssl ? 'https' : 'http';
+    
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // First authenticate to get a ticket
+      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+      
+      // Get storage from node
+      const response = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/storage`,
+        { 
+          headers: {
+            'Cookie': `PVEAuthCookie=${ticket}`
+          }
+        }
+      );
+      
+      res.json({
+        success: true,
+        node: node.name,
+        storage: response.data.data || []
+      });
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API for storage data:', apiError);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch storage data' 
+      });
+    }
+  } catch (err) {
+    console.error('Error fetching node storage:', err);
+    res.status(500).json({ error: 'Failed to fetch node storage' });
+  }
+});
+
+// Network management routes
+app.get('/api/nodes/:nodeId/network', async (req, res) => {
+  try {
+    // Get node details from database
+    const nodeResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
+      [req.params.nodeId]
+    );
+    
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
+    const protocol = node.use_ssl ? 'https' : 'http';
+    
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+      
+      // First authenticate to get a ticket
+      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+      
+      // Get network from node
+      const response = await axiosInstance.get(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/network`,
+        { 
+          headers: {
+            'Cookie': `PVEAuthCookie=${ticket}`
+          }
+        }
+      );
+      
+      res.json({
+        success: true,
+        node: node.name,
+        network: response.data.data || []
+      });
+    } catch (apiError) {
+      console.error('Error connecting to Proxmox API for network data:', apiError);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch network data' 
+      });
+    }
+  } catch (err) {
+    console.error('Error fetching node network:', err);
+    res.status(500).json({ error: 'Failed to fetch node network' });
   }
 });
 

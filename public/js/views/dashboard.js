@@ -1,10 +1,11 @@
 /**
  * Dashboard View
- * Displays the main dashboard with overview of nodes, VMs, and containers
+ * Displays the cluster dashboard with resource monitoring and overview
  */
 export class DashboardView {
   constructor(app) {
     this.app = app;
+    this.charts = {};
   }
   
   /**
@@ -19,22 +20,99 @@ export class DashboardView {
     
     // Set main content
     mainContent.innerHTML = `
-      ${this.app.ui.createPageHeader('Dashboard', 'tachometer-alt')}
+      ${this.app.ui.createPageHeader('Cluster Dashboard', 'chart-line')}
       
-      <!-- Stats Overview -->
-      <div class="stats-container">
-        ${this.getStatsHTML(nodes, vms, containers)}
+      <!-- Stats Cards Row -->
+      <div class="row">
+        <div class="col-md-3">
+          <div class="card stat-card stat-primary mb-4">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="stat-value">${nodes.length}</div>
+                  <div class="stat-label">Proxmox Nodes</div>
+                </div>
+                <div class="stat-icon">
+                  <i class="fas fa-server"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-3">
+          <div class="card stat-card stat-success mb-4">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="stat-value">${vms.length}</div>
+                  <div class="stat-label">Virtual Machines</div>
+                </div>
+                <div class="stat-icon">
+                  <i class="fas fa-desktop"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-3">
+          <div class="card stat-card stat-warning mb-4">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="stat-value">${containers.length}</div>
+                  <div class="stat-label">LXC Containers</div>
+                </div>
+                <div class="stat-icon">
+                  <i class="fas fa-box"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-3">
+          <div class="card stat-card stat-danger mb-4">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="stat-value" id="active-vms">-</div>
+                  <div class="stat-label">Running VMs</div>
+                </div>
+                <div class="stat-icon">
+                  <i class="fas fa-play-circle"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       
-      <!-- Node Management Card -->
-      ${this.getNodeManagementHTML(nodes)}
+      <!-- Cluster Monitoring -->
+      ${this.getClusterMonitoringHTML(nodes)}
       
-      <!-- Recent Activity -->
-      ${this.getRecentActivityHTML()}
+      <!-- Node Status Cards -->
+      <div class="row">
+        ${this.getNodeStatusCardsHTML(nodes)}
+      </div>
+      
+      <!-- Recent Events Card -->
+      <div class="row">
+        <div class="col-md-12">
+          ${this.getRecentEventsHTML()}
+        </div>
+      </div>
     `;
     
     // Add event listeners
     this.addEventListeners();
+    
+    // Initialize charts
+    this.initializeCharts(nodes);
+    
+    // Count active VMs
+    this.updateActiveVMCount(vms);
   }
   
   /**
@@ -457,5 +535,444 @@ export class DashboardView {
       // Show error message
       this.app.ui.showError('Failed to delete node: ' + (error.message || 'Unknown error'));
     }
+  }
+  
+  /**
+   * Get cluster monitoring HTML
+   * @param {Array} nodes - Nodes
+   * @returns {string} Cluster monitoring HTML
+   */
+  getClusterMonitoringHTML(nodes) {
+    const noNodesMessage = `
+      <div class="alert alert-info mb-0">
+        <i class="fas fa-info-circle me-2"></i> No nodes available. Add your first Proxmox node to see resource monitoring.
+      </div>
+    `;
+    
+    if (nodes.length === 0) {
+      return this.app.ui.createCard('Cluster Resource Monitoring', noNodesMessage, 'chart-line');
+    }
+    
+    return `
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="fas fa-microchip me-2 text-primary"></i>
+                CPU Usage
+              </h5>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary active" data-time="1h">1h</button>
+                <button class="btn btn-sm btn-outline-secondary" data-time="6h">6h</button>
+                <button class="btn btn-sm btn-outline-secondary" data-time="24h">24h</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-container" id="cpu-chart-container">
+                <canvas id="cpu-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="fas fa-memory me-2 text-primary"></i>
+                Memory Usage
+              </h5>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary active" data-time="1h">1h</button>
+                <button class="btn btn-sm btn-outline-secondary" data-time="6h">6h</button>
+                <button class="btn btn-sm btn-outline-secondary" data-time="24h">24h</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-container" id="memory-chart-container">
+                <canvas id="memory-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="fas fa-hdd me-2 text-primary"></i>
+                Storage Usage
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="chart-container" id="storage-chart-container">
+                <canvas id="storage-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="fas fa-network-wired me-2 text-primary"></i>
+                Network Traffic
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="chart-container" id="network-chart-container">
+                <canvas id="network-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get node status cards HTML
+   * @param {Array} nodes - Nodes
+   * @returns {string} Node status cards HTML
+   */
+  getNodeStatusCardsHTML(nodes) {
+    if (nodes.length === 0) {
+      return `
+        <div class="col-md-12">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i> No nodes available. Please add a node to see node status.
+          </div>
+        </div>
+      `;
+    }
+    
+    return nodes.map(node => `
+      <div class="col-md-6 col-xl-4 mb-4">
+        <div class="node-status-card">
+          <div class="node-title">
+            <div class="status-indicator ${node.status?.toLowerCase() === 'online' ? 'status-online' : 'status-offline'}"></div>
+            <span>${node.name}</span>
+            <a href="#" class="ms-auto node-details-btn text-primary" data-id="${node.id}" title="View details">
+              <i class="fas fa-external-link-alt"></i>
+            </a>
+          </div>
+          
+          <div class="d-flex align-items-center mt-2 mb-3">
+            <div>
+              <div class="text-muted" style="font-size: 0.8rem;">${node.api_host || node.hostname}:${node.api_port || node.port || 8006}</div>
+              <div>${this.app.ui.getStatusBadge(node.status || 'Unknown')}</div>
+            </div>
+          </div>
+          
+          <div class="node-details">
+            ${this.app.ui.createResourceMeter(node.cpu_usage || 0, 'CPU', `${node.cpu_usage || 0}%`)}
+            ${this.app.ui.createResourceMeter(node.memory_usage || 0, 'Memory', `${node.memory_usage || 0}%`)}
+            ${this.app.ui.createResourceMeter(node.disk_usage || 0, 'Storage', `${node.disk_usage || 0}%`)}
+          </div>
+          
+          <div class="d-flex flex-wrap mt-3">
+            <div class="me-3 mb-2">
+              <div class="text-muted small">VMs</div>
+              <div class="fw-semibold">${node.vms_count || 0}</div>
+            </div>
+            <div class="me-3 mb-2">
+              <div class="text-muted small">Containers</div>
+              <div class="fw-semibold">${node.container_count || 0}</div>
+            </div>
+            <div class="me-3 mb-2">
+              <div class="text-muted small">Uptime</div>
+              <div class="fw-semibold">${this.formatUptime(node.uptime || 0)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+  
+  /**
+   * Get recent events HTML
+   * @returns {string} Recent events HTML
+   */
+  getRecentEventsHTML() {
+    return this.app.ui.createCard('Recent Events', `
+      <div class="alert alert-info mb-0">
+        <i class="fas fa-info-circle me-2"></i> Event logging will be available after you interact with Proxmox nodes.
+      </div>
+    `, 'history');
+  }
+  
+  /**
+   * Format uptime in seconds to readable format
+   * @param {number} seconds - Uptime in seconds
+   * @returns {string} Formatted uptime
+   */
+  formatUptime(seconds) {
+    if (seconds === 0) return 'N/A';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  }
+  
+  /**
+   * Update active VM count
+   * @param {Array} vms - VMs
+   */
+  updateActiveVMCount(vms) {
+    const activeVMsElement = document.getElementById('active-vms');
+    if (activeVMsElement) {
+      const activeVMs = vms.filter(vm => 
+        vm.status && 
+        (vm.status.toLowerCase() === 'running' || vm.status.toLowerCase() === 'online')
+      ).length;
+      
+      activeVMsElement.textContent = activeVMs;
+    }
+  }
+  
+  /**
+   * Initialize charts
+   * @param {Array} nodes - Nodes
+   */
+  initializeCharts(nodes) {
+    if (nodes.length === 0) return;
+    
+    setTimeout(() => {
+      this.initCPUChart();
+      this.initMemoryChart();
+      this.initStorageChart();
+      this.initNetworkChart();
+    }, 100);
+  }
+  
+  /**
+   * Initialize CPU chart
+   */
+  initCPUChart() {
+    const ctx = document.getElementById('cpu-chart');
+    if (!ctx) return;
+    
+    // Sample data for demonstration
+    const data = {
+      labels: this.generateTimeLabels(24),
+      datasets: [
+        {
+          label: 'Average CPU Usage',
+          data: this.generateRandomData(24, 10, 60),
+          borderColor: '#8257e6',
+          backgroundColor: 'rgba(130, 87, 230, 0.1)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2
+        }
+      ]
+    };
+    
+    const config = {
+      type: 'line',
+      data,
+      options: this.getChartOptions('CPU Usage (%)')
+    };
+    
+    this.charts.cpu = new Chart(ctx, config);
+  }
+  
+  /**
+   * Initialize memory chart
+   */
+  initMemoryChart() {
+    const ctx = document.getElementById('memory-chart');
+    if (!ctx) return;
+    
+    // Sample data for demonstration
+    const data = {
+      labels: this.generateTimeLabels(24),
+      datasets: [
+        {
+          label: 'Average Memory Usage',
+          data: this.generateRandomData(24, 30, 80),
+          borderColor: '#53c986',
+          backgroundColor: 'rgba(83, 201, 134, 0.1)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2
+        }
+      ]
+    };
+    
+    const config = {
+      type: 'line',
+      data,
+      options: this.getChartOptions('Memory Usage (%)')
+    };
+    
+    this.charts.memory = new Chart(ctx, config);
+  }
+  
+  /**
+   * Initialize storage chart
+   */
+  initStorageChart() {
+    const ctx = document.getElementById('storage-chart');
+    if (!ctx) return;
+    
+    // Sample data for demonstration
+    const data = {
+      labels: ['Free', 'Used'],
+      datasets: [
+        {
+          data: [30, 70],
+          backgroundColor: ['#53c986', '#ff5252'],
+          hoverOffset: 4
+        }
+      ]
+    };
+    
+    const config = {
+      type: 'doughnut',
+      data,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              color: 'rgb(240, 240, 240)'
+            }
+          },
+          title: {
+            display: true,
+            text: 'Storage Usage',
+            color: 'rgb(240, 240, 240)'
+          }
+        }
+      }
+    };
+    
+    this.charts.storage = new Chart(ctx, config);
+  }
+  
+  /**
+   * Initialize network chart
+   */
+  initNetworkChart() {
+    const ctx = document.getElementById('network-chart');
+    if (!ctx) return;
+    
+    // Sample data for demonstration
+    const data = {
+      labels: this.generateTimeLabels(12),
+      datasets: [
+        {
+          label: 'Inbound',
+          data: this.generateRandomData(12, 10, 100),
+          borderColor: '#33b5e5',
+          backgroundColor: 'rgba(51, 181, 229, 0.1)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2
+        },
+        {
+          label: 'Outbound',
+          data: this.generateRandomData(12, 5, 50),
+          borderColor: '#ffcc33',
+          backgroundColor: 'rgba(255, 204, 51, 0.1)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2
+        }
+      ]
+    };
+    
+    const config = {
+      type: 'line',
+      data,
+      options: this.getChartOptions('Network Traffic (MB/s)')
+    };
+    
+    this.charts.network = new Chart(ctx, config);
+  }
+  
+  /**
+   * Get chart options
+   * @param {string} yAxisTitle - Y-axis title
+   * @returns {Object} Chart options
+   */
+  getChartOptions(yAxisTitle) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: 'rgb(240, 240, 240)'
+          }
+        },
+        title: {
+          display: false
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          },
+          ticks: {
+            color: 'rgb(200, 200, 200)'
+          }
+        },
+        y: {
+          grid: {
+            color: 'rgba(255, 255, 255, 0.1)'
+          },
+          ticks: {
+            color: 'rgb(200, 200, 200)'
+          },
+          title: {
+            display: true,
+            text: yAxisTitle,
+            color: 'rgb(200, 200, 200)'
+          }
+        }
+      }
+    };
+  }
+  
+  /**
+   * Generate time labels for charts
+   * @param {number} count - Number of labels
+   * @returns {Array} Time labels
+   */
+  generateTimeLabels(count) {
+    const labels = [];
+    const now = new Date();
+    
+    for (let i = count - 1; i >= 0; i--) {
+      const time = new Date(now.getTime() - i * 3600 * 1000);
+      labels.push(time.getHours().toString().padStart(2, '0') + ':00');
+    }
+    
+    return labels;
+  }
+  
+  /**
+   * Generate random data for charts
+   * @param {number} count - Number of data points
+   * @param {number} min - Minimum value
+   * @param {number} max - Maximum value
+   * @returns {Array} Random data
+   */
+  generateRandomData(count, min, max) {
+    return Array.from({ length: count }, () => Math.floor(Math.random() * (max - min + 1)) + min);
   }
 }

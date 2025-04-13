@@ -570,7 +570,7 @@ app.post('/api/login', async (req, res) => {
 // Node management routes
 app.get('/api/nodes', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes');
+    const result = await pool.query('SELECT id, name, hostname, port, username, password, status, created_at FROM nodes');
     
     // Map existing schema to expected format in the frontend
     const mappedNodes = result.rows.map(node => ({
@@ -588,7 +588,7 @@ app.get('/api/nodes', async (req, res) => {
       use_ssl: true,
       verify_ssl: node.ssl_verify || false,
       created_at: node.created_at,
-      status: node.node_status
+      status: node.status || 'online'
     }));
     
     res.json(mappedNodes);
@@ -628,7 +628,8 @@ app.post('/api/nodes', async (req, res) => {
         api_port || 8006, // Use api_port as port
         api_username, // Use api_username as username
         api_password, // Use api_password as password
-        verify_ssl || false // Use verify_ssl as ssl_verify
+        verify_ssl || false, // Use verify_ssl as ssl_verify
+        'online' // Set status to online by default
       ]
     );
     
@@ -648,6 +649,7 @@ app.post('/api/nodes', async (req, res) => {
       ssh_password: null, // Don't send password back to client
       use_ssl: true,
       verify_ssl: verify_ssl || false,
+      status: node.status || 'online', // Include status in response
       created_at: node.created_at
     };
     
@@ -860,7 +862,7 @@ app.get('/api/nodes/:id', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password, status, created_at FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -884,7 +886,8 @@ app.get('/api/nodes/:id', async (req, res) => {
       ssh_username: dbNode.username,
       ssh_password: dbNode.password,
       use_ssl: true,
-      verify_ssl: false
+      verify_ssl: false,
+      status: dbNode.status || 'online'
     };
     
     // Connect to Proxmox API to get real-time data

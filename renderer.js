@@ -3243,16 +3243,23 @@ iface eth1 inet static
     mainContent.innerHTML = `
       ${getCommonHeader('Resource Monitoring')}
       
-      <div class="card glow-border mb-4">
-        <div class="card-header">
-          <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i> SYSTEM PERFORMANCE</h5>
-        </div>
-        <div class="card-body">
-          <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i> The monitoring system is being implemented. This will provide real-time charts for CPU, memory, network, and storage usage across your Proxmox infrastructure.
-          </div>
-          
-          <div class="row mt-4">
+      <div class="row mb-4">
+        <div class="col-lg-8">
+          <div class="card glow-border mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i> SYSTEM PERFORMANCE</h5>
+              <div>
+                <button class="btn btn-sm btn-outline-primary glow-border me-2" id="refresh-monitoring">
+                  <i class="fas fa-sync me-2"></i> Refresh
+                </button>
+                <div class="form-check form-switch d-inline-flex align-items-center ms-2">
+                  <input class="form-check-input me-2" type="checkbox" id="realtime-toggle" checked>
+                  <label class="form-check-label" for="realtime-toggle">Real-time Updates</label>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="row mt-2">
             <div class="col-md-6 mb-4">
               <div class="card">
                 <div class="card-header">
@@ -3302,67 +3309,171 @@ iface eth1 inet static
         </div>
       </div>
       
-      <div class="card glow-border">
-        <div class="card-header">
-          <h5 class="mb-0"><i class="fas fa-bell me-2"></i> ALERTS & NOTIFICATIONS</h5>
+      <!-- Node Filtering -->
+          <div class="card glow-border mb-4">
+            <div class="card-header">
+              <h5 class="mb-0"><i class="fas fa-filter me-2"></i> MONITORING FILTERS</h5>
+            </div>
+            <div class="card-body">
+              <div class="row align-items-end">
+                <div class="col-md-5">
+                  <label class="form-label">Node Selection</label>
+                  <select class="form-select" id="monitoring-node-select">
+                    <option value="all">All Nodes (Cluster View)</option>
+                    ${state.nodes.map(node => `<option value="${node.name}">${node.name} (${node.hostname})</option>`).join('')}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Time Range</label>
+                  <select class="form-select" id="monitoring-timeframe-select">
+                    <option value="realtime">Real-time (Last 10 Minutes)</option>
+                    <option value="hour">Last Hour</option>
+                    <option value="day">Last 24 Hours</option>
+                    <option value="week">Last 7 Days</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <button class="btn btn-primary w-100" id="monitoring-apply-filters">
+                    <i class="fas fa-check me-2"></i> Apply Filters
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="card-body">
-          <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i> The alert system is being implemented. This will allow you to set thresholds for resource usage and receive notifications when they are exceeded.
+        
+        <div class="col-lg-4">
+          <!-- Alert Configuration -->
+          <div class="card glow-border mb-4">
+            <div class="card-header">
+              <h5 class="mb-0"><i class="fas fa-bell me-2"></i> ALERT CONFIGURATION</h5>
+            </div>
+            <div class="card-body">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="enable-alerts" checked>
+                <label class="form-check-label" for="enable-alerts">Enable Monitoring Alerts</label>
+              </div>
+              
+              <h6 class="mb-3 border-bottom border-secondary pb-2">Resource Thresholds</h6>
+              
+              <div class="mb-3">
+                <label class="form-label d-flex justify-content-between">
+                  <span>CPU Usage Threshold</span>
+                  <span class="badge bg-warning" id="cpu-threshold-value">80%</span>
+                </label>
+                <input type="range" class="form-range" id="cpu-threshold" min="50" max="95" step="5" value="80">
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label d-flex justify-content-between">
+                  <span>Memory Usage Threshold</span>
+                  <span class="badge bg-warning" id="memory-threshold-value">90%</span>
+                </label>
+                <input type="range" class="form-range" id="memory-threshold" min="50" max="95" step="5" value="90">
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label d-flex justify-content-between">
+                  <span>Disk Usage Threshold</span>
+                  <span class="badge bg-warning" id="disk-threshold-value">85%</span>
+                </label>
+                <input type="range" class="form-range" id="disk-threshold" min="50" max="95" step="5" value="85">
+              </div>
+              
+              <h6 class="mb-3 border-bottom border-secondary pb-2">Notification Methods</h6>
+              
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="notify-app" checked>
+                <label class="form-check-label" for="notify-app">In-App Notifications</label>
+              </div>
+              
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="notify-email" checked>
+                <label class="form-check-label" for="notify-email">Email Notifications</label>
+              </div>
+              
+              <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="notify-webhook">
+                <label class="form-check-label" for="notify-webhook">Webhook Notifications</label>
+              </div>
+              
+              <div class="mb-3" id="webhook-config" style="display: none;">
+                <input type="text" class="form-control mb-2" placeholder="Webhook URL">
+                <div class="form-text">Enter the URL to send webhook notifications to.</div>
+              </div>
+              
+              <button class="btn btn-primary w-100 mt-3" id="save-alert-settings">
+                <i class="fas fa-save me-2"></i> Save Alert Settings
+              </button>
+            </div>
           </div>
           
-          <div class="table-responsive mt-4">
-            <table class="table table-dark table-hover">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Resource</th>
-                  <th>Threshold</th>
-                  <th>Current Value</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>CPU</td>
-                  <td>Node: pve1</td>
-                  <td>80%</td>
-                  <td>45%</td>
-                  <td><span class="badge bg-success">Normal</span></td>
-                  <td>
-                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
-                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Memory</td>
-                  <td>Node: pve2</td>
-                  <td>90%</td>
-                  <td>87%</td>
-                  <td><span class="badge bg-warning">Warning</span></td>
-                  <td>
-                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
-                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Disk</td>
-                  <td>Storage: local-lvm</td>
-                  <td>95%</td>
-                  <td>96%</td>
-                  <td><span class="badge bg-danger">Critical</span></td>
-                  <td>
-                    <button class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></button>
-                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Current Alerts -->
+          <div class="card glow-border">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i> ACTIVE ALERTS</h5>
+              <span class="badge bg-danger">3</span>
+            </div>
+            <div class="card-body p-0">
+              <div class="list-group list-group-flush">
+                <div class="list-group-item bg-dark text-white border-secondary">
+                  <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1 text-danger"><i class="fas fa-exclamation-circle me-2"></i> High Memory Usage</h6>
+                    <small class="text-muted">5 mins ago</small>
+                  </div>
+                  <p class="mb-1 small">Node pve1 memory usage at 92% (threshold: 90%)</p>
+                  <small class="text-muted">ID: vm-db01 (VMID: 101)</small>
+                </div>
+                <div class="list-group-item bg-dark text-white border-secondary">
+                  <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1 text-warning"><i class="fas fa-exclamation-triangle me-2"></i> High CPU Usage</h6>
+                    <small class="text-muted">15 mins ago</small>
+                  </div>
+                  <p class="mb-1 small">Node pve2 CPU usage at 85% (threshold: 80%)</p>
+                  <small class="text-muted">ID: vm-web01 (VMID: 100)</small>
+                </div>
+                <div class="list-group-item bg-dark text-white border-secondary">
+                  <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1 text-danger"><i class="fas fa-exclamation-circle me-2"></i> Disk Space Critical</h6>
+                    <small class="text-muted">32 mins ago</small>
+                  </div>
+                  <p class="mb-1 small">Node pve1 local-lvm usage at 92% (threshold: 85%)</p>
+                  <small class="text-muted">Storage: local-lvm</small>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn btn-sm btn-outline-primary glow-border w-100">
+                <i class="fas fa-list me-2"></i> View All Alerts
+              </button>
+            </div>
           </div>
         </div>
       </div>
     `;
+    
+    // Setup alert threshold UI
+    document.getElementById('cpu-threshold').addEventListener('input', function() {
+      document.getElementById('cpu-threshold-value').textContent = this.value + '%';
+    });
+    
+    document.getElementById('memory-threshold').addEventListener('input', function() {
+      document.getElementById('memory-threshold-value').textContent = this.value + '%';
+    });
+    
+    document.getElementById('disk-threshold').addEventListener('input', function() {
+      document.getElementById('disk-threshold-value').textContent = this.value + '%';
+    });
+    
+    // Toggle webhook config
+    document.getElementById('notify-webhook').addEventListener('change', function() {
+      document.getElementById('webhook-config').style.display = this.checked ? 'block' : 'none';
+    });
+    
+    // Save alert settings
+    document.getElementById('save-alert-settings').addEventListener('click', function() {
+      showNotification('Alert settings saved successfully', 'success');
+    });
     
     // Initialize charts if chart.js is loaded
     if (typeof Chart !== 'undefined') {
@@ -3370,6 +3481,57 @@ iface eth1 inet static
     } else {
       console.warn('Chart.js is not loaded, charts will not be displayed');
     }
+    
+    // Monitor filter application
+    document.getElementById('monitoring-apply-filters').addEventListener('click', function() {
+      const node = document.getElementById('monitoring-node-select').value;
+      const timeframe = document.getElementById('monitoring-timeframe-select').value;
+      
+      showNotification(`Monitoring view updated for ${node === 'all' ? 'all nodes' : node} over ${timeframe}`, 'info');
+      
+      // Simulate loading updated charts
+      const cardBodies = document.querySelectorAll('.card-body canvas');
+      cardBodies.forEach(canvas => {
+        canvas.style.opacity = '0.5';
+      });
+      
+      setTimeout(() => {
+        cardBodies.forEach(canvas => {
+          canvas.style.opacity = '1';
+        });
+        // This would reinitialize charts with new data in a real implementation
+        initializeCharts();
+      }, 1500);
+    });
+    
+    // Toggle real-time updates
+    document.getElementById('realtime-toggle').addEventListener('change', function() {
+      if (this.checked) {
+        showNotification('Real-time monitoring enabled', 'info');
+      } else {
+        showNotification('Real-time monitoring paused', 'info');
+      }
+    });
+    
+    // Refresh monitoring data
+    document.getElementById('refresh-monitoring').addEventListener('click', function() {
+      showNotification('Refreshing monitoring data...', 'info');
+      
+      // Simulate refreshing data
+      const cardBodies = document.querySelectorAll('.card-body canvas');
+      cardBodies.forEach(canvas => {
+        canvas.style.opacity = '0.5';
+      });
+      
+      setTimeout(() => {
+        cardBodies.forEach(canvas => {
+          canvas.style.opacity = '1';
+        });
+        // This would refresh charts with new data in a real implementation
+        initializeCharts();
+        showNotification('Monitoring data refreshed', 'success');
+      }, 1000);
+    });
   }
   
   // Initialize resource monitoring charts

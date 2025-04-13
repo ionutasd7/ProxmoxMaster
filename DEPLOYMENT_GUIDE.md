@@ -1,6 +1,6 @@
 # Proxmox Infrastructure Manager - Deployment Guide for Debian 12
 
-This guide will walk you through the process of deploying the Proxmox Infrastructure Manager application on a clean Debian 12 installation.
+This guide will walk you through the process of deploying the Proxmox Infrastructure Manager application on a clean Debian 12 installation. The application provides comprehensive management capabilities for your Proxmox infrastructure, including VM/LXC deployment, network management, updates, and monitoring.
 
 ## System Requirements
 
@@ -9,6 +9,7 @@ This guide will walk you through the process of deploying the Proxmox Infrastruc
 - At least 10GB free disk space
 - Internet connectivity for package installation
 - Access to your Proxmox infrastructure from this system
+- PostgreSQL database (for storing application data)
 
 ## Step 1: Update Your System
 
@@ -21,7 +22,7 @@ sudo apt upgrade -y
 
 ## Step 2: Install Required Dependencies
 
-Install Node.js, npm, and other required packages:
+Install Node.js, npm, PostgreSQL, and other required packages:
 
 ```bash
 # Install curl for downloading Node.js
@@ -30,15 +31,46 @@ sudo apt install -y curl
 # Add NodeSource repository
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 
-# Install Node.js and development tools
-sudo apt install -y nodejs git build-essential
+# Install Node.js, PostgreSQL and development tools
+sudo apt install -y nodejs git build-essential postgresql postgresql-contrib
 
-# Verify installation
+# Verify Node.js installation
 node --version  # Should show v20.x.x
 npm --version   # Should show 10.x.x
+
+# Start PostgreSQL service and enable it on boot
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
 ```
 
-## Step 3: Clone the Repository
+## Step 3: Configure PostgreSQL
+
+Set up a PostgreSQL user and database for the application:
+
+```bash
+# Switch to the postgres user
+sudo -i -u postgres
+
+# Create a database user (replace 'proxmoxmgr' and 'password' with your preferred values)
+createuser --interactive --pwprompt proxmoxmgr
+# Answer the prompts:
+# Enter password for new role: [your-secure-password]
+# Enter it again: [your-secure-password]
+# Shall the new role be a superuser? (y/n): n
+# Shall the new role be allowed to create databases? (y/n): y
+# Shall the new role be allowed to create more new roles? (y/n): n
+
+# Create a database for the application
+createdb --owner=proxmoxmgr proxmox_manager
+
+# Exit the postgres user session
+exit
+
+# Test the database connection
+PGPASSWORD=your-secure-password psql -h localhost -U proxmoxmgr -d proxmox_manager -c "SELECT 'Connection successful!';"
+```
+
+## Step 4: Clone the Repository
 
 ```bash
 # Create a directory for the application
@@ -50,7 +82,7 @@ git clone https://github.com/yourusername/proxmox-infrastructure-manager.git
 cd proxmox-infrastructure-manager
 ```
 
-## Step 4: Install Application Dependencies
+## Step 5: Install Application Dependencies
 
 ```bash
 # Install all dependencies

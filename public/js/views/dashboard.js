@@ -1151,4 +1151,148 @@ export class DashboardView {
   generateRandomData(count, min, max) {
     return Array.from({ length: count }, () => Math.floor(Math.random() * (max - min + 1)) + min);
   }
+  
+  /**
+   * Update resource displays with real data
+   * @param {Array} monitoringData - Node monitoring data
+   */
+  updateResourceDisplays(monitoringData) {
+    if (!monitoringData || monitoringData.length === 0) return;
+    
+    try {
+      // Calculate aggregate CPU usage
+      let totalCpuUsage = 0;
+      let totalCpuCores = 0;
+      let totalCpuSockets = 0;
+      
+      // Calculate aggregate memory usage
+      let totalMemoryUsed = 0;
+      let totalMemorySize = 0;
+      
+      // Calculate aggregate disk usage
+      let totalDiskUsed = 0;
+      let totalDiskSize = 0;
+      
+      // Calculate aggregate network traffic
+      let totalNetworkIn = 0;
+      let totalNetworkOut = 0;
+      
+      // Process monitoring data from all nodes
+      monitoringData.forEach(nodeData => {
+        // CPU data
+        if (nodeData.cpu) {
+          totalCpuUsage += nodeData.cpu.usage || 0;
+          totalCpuCores += nodeData.cpu.cores || 0;
+          totalCpuSockets += nodeData.cpu.sockets || 0;
+        }
+        
+        // Memory data
+        if (nodeData.memory) {
+          totalMemoryUsed += nodeData.memory.used || 0;
+          totalMemorySize += nodeData.memory.total || 0;
+        }
+        
+        // Storage data
+        if (nodeData.storage || nodeData.rootfs) {
+          const storage = nodeData.storage || nodeData.rootfs;
+          totalDiskUsed += storage.used || 0;
+          totalDiskSize += storage.total || 0;
+        }
+        
+        // Network data
+        if (nodeData.network) {
+          totalNetworkIn += nodeData.network.in || 0;
+          totalNetworkOut += nodeData.network.out || 0;
+        }
+      });
+      
+      // Calculate averages
+      const avgCpuUsage = monitoringData.length > 0 ? Math.round(totalCpuUsage / monitoringData.length) : 0;
+      
+      // Update CPU display
+      document.getElementById('cpu-usage-percentage').textContent = `${avgCpuUsage}%`;
+      document.getElementById('cpu-usage-label').textContent = `${totalCpuCores} CPUs, ${totalCpuSockets} Socket(s)`;
+      document.getElementById('cpu-usage-circle').style.background = 
+        `conic-gradient(#3498db ${avgCpuUsage}%, #1a1a1a ${avgCpuUsage}%)`;
+      
+      // Update Memory display
+      const memoryUsagePercent = totalMemorySize > 0 ? Math.round((totalMemoryUsed / totalMemorySize) * 100) : 0;
+      const memoryUsedGB = this.formatGB(totalMemoryUsed);
+      const memorySizeGB = this.formatGB(totalMemorySize);
+      
+      document.getElementById('memory-usage-percentage').textContent = `${memoryUsagePercent}%`;
+      document.getElementById('memory-usage-label').textContent = `${memoryUsedGB} / ${memorySizeGB}`;
+      document.getElementById('memory-usage-circle').style.background = 
+        `conic-gradient(#2ecc71 ${memoryUsagePercent}%, #1a1a1a ${memoryUsagePercent}%)`;
+      
+      // Update Disk display
+      const diskUsagePercent = totalDiskSize > 0 ? Math.round((totalDiskUsed / totalDiskSize) * 100) : 0;
+      const diskUsedGB = this.formatGB(totalDiskUsed);
+      const diskSizeGB = this.formatGB(totalDiskSize);
+      
+      document.getElementById('disk-usage-percentage').textContent = `${diskUsagePercent}%`;
+      document.getElementById('disk-usage-label').textContent = `${diskUsedGB} / ${diskSizeGB}`;
+      document.getElementById('disk-usage-circle').style.background = 
+        `conic-gradient(#e74c3c ${diskUsagePercent}%, #1a1a1a ${diskUsagePercent}%)`;
+      
+      // Update Network display
+      document.getElementById('network-in').textContent = `${this.formatNetworkSpeed(totalNetworkIn)}`;
+      document.getElementById('network-out').textContent = `${this.formatNetworkSpeed(totalNetworkOut)}`;
+    } catch (error) {
+      console.error('Error updating resource displays:', error);
+    }
+  }
+  
+  /**
+   * Update node status counts
+   * @param {Array} nodes - Nodes
+   */
+  updateNodeStatusCounts(nodes) {
+    if (!nodes || nodes.length === 0) return;
+    
+    try {
+      let onlineCount = 0;
+      let warningCount = 0;
+      let offlineCount = 0;
+      
+      // Count nodes by status
+      nodes.forEach(node => {
+        const status = (node.status || node.node_status || '').toLowerCase();
+        if (status === 'online') {
+          onlineCount++;
+        } else if (status === 'warning') {
+          warningCount++;
+        } else {
+          offlineCount++;
+        }
+      });
+      
+      // Update status counts
+      document.getElementById('online-nodes').textContent = onlineCount;
+      document.getElementById('warning-nodes').textContent = warningCount;
+      document.getElementById('offline-nodes').textContent = offlineCount;
+    } catch (error) {
+      console.error('Error updating node status counts:', error);
+    }
+  }
+  
+  /**
+   * Format bytes to GB with 2 decimal places
+   * @param {number} bytes - Bytes
+   * @returns {string} Formatted GB
+   */
+  formatGB(bytes) {
+    if (!bytes || isNaN(bytes)) return '0 GB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+  
+  /**
+   * Format network speed
+   * @param {number} bytesPerSec - Bytes per second
+   * @returns {string} Formatted network speed
+   */
+  formatNetworkSpeed(bytesPerSec) {
+    if (!bytesPerSec || isNaN(bytesPerSec)) return '0 MB/s';
+    return (bytesPerSec / (1024 * 1024)).toFixed(2) + ' MB/s';
+  }
 }

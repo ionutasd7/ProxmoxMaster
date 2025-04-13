@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // Handle login form submission
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault();
     
     const username = document.getElementById('username').value;
@@ -69,10 +69,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // Show loading
       displayLoading("Logging in...");
       
-      // Simulate processing time
-      setTimeout(() => {
-        displayDashboard();
-      }, 1000);
+      try {
+        // Verify API server is running
+        const statusResponse = await fetch('/api/status');
+        if (!statusResponse.ok) {
+          throw new Error('API server is not responding');
+        }
+        
+        // Load application data
+        await loadApplicationData();
+      } catch (error) {
+        console.error('Error during login:', error);
+        displayLogin("Error connecting to server. Please try again.");
+      }
     } else {
       displayLogin("Invalid username or password. Try using admin/admin.");
     }
@@ -94,6 +103,58 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
   
+  // Fetch data from API
+  async function fetchData(endpoint) {
+    try {
+      const response = await fetch(endpoint);
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error(`Error fetching data from ${endpoint}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Load application data
+  async function loadApplicationData() {
+    displayLoading("Loading application data...");
+    
+    try {
+      // Fetch nodes data
+      const nodesResponse = await fetchData('/api/nodes');
+      if (nodesResponse.success) {
+        state.nodes = nodesResponse.nodes;
+      } else {
+        console.error('Failed to load nodes:', nodesResponse.error);
+      }
+      
+      // Fetch VMs data
+      const vmsResponse = await fetchData('/api/vms');
+      if (vmsResponse.success) {
+        state.vms = vmsResponse.vms;
+      } else {
+        console.error('Failed to load VMs:', vmsResponse.error);
+      }
+      
+      // Fetch containers data
+      const containersResponse = await fetchData('/api/containers');
+      if (containersResponse.success) {
+        state.containers = containersResponse.containers;
+      } else {
+        console.error('Failed to load containers:', containersResponse.error);
+      }
+      
+      // Display the dashboard with loaded data
+      displayDashboard();
+    } catch (error) {
+      console.error('Error loading application data:', error);
+      // If we encounter an error, still try to display the dashboard with whatever data we have
+      displayDashboard();
+    }
+  }
+
   // Display the main dashboard view
   function displayDashboard() {
     root.innerHTML = `

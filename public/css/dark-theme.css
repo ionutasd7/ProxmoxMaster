@@ -595,6 +595,13 @@ body {
   background-color: var(--chart-bg);
   padding: 15px;
   border-radius: 10px;
+  position: relative;
+  height: 300px;
+  margin-bottom: 20px;
+}
+
+canvas {
+  background-color: var(--chart-bg);
 }
 
 /* Tooltip */

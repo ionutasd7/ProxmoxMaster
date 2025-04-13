@@ -197,6 +197,35 @@ export class UI {
   }
   
   /**
+   * Get a status badge based on status text
+   * @param {string} status - Status text
+   * @returns {string} HTML for status badge
+   */
+  getStatusBadge(status) {
+    if (!status) return '';
+    
+    status = status.toLowerCase();
+    let badgeClass = 'bg-secondary';
+    let icon = 'question-circle';
+    
+    if (status === 'online' || status === 'running' || status === 'active') {
+      badgeClass = 'bg-success';
+      icon = 'check-circle';
+    } else if (status === 'offline' || status === 'stopped' || status === 'inactive') {
+      badgeClass = 'bg-danger';
+      icon = 'times-circle';
+    } else if (status === 'pending' || status === 'starting' || status === 'stopping') {
+      badgeClass = 'bg-warning';
+      icon = 'clock';
+    } else if (status === 'paused' || status === 'suspended') {
+      badgeClass = 'bg-info';
+      icon = 'pause-circle';
+    }
+    
+    return `<span class="badge ${badgeClass}"><i class="fas fa-${icon} me-1"></i>${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
+  }
+  
+  /**
    * Show notification
    * @param {string} message - Notification message
    * @param {string} type - Notification type (success, danger, warning, info)
@@ -368,22 +397,22 @@ export class UI {
    * @returns {string} Resource meter HTML
    */
   createResourceMeter(usedPercent, label, value) {
-    let meterClass = 'resource-meter-low';
-    
-    if (usedPercent > 80) {
-      meterClass = 'resource-meter-high';
-    } else if (usedPercent > 60) {
-      meterClass = 'resource-meter-medium';
+    // Determine color class based on usage percentage
+    let colorClass = 'resource-meter-fill-low';
+    if (usedPercent > 75) {
+      colorClass = 'resource-meter-fill-high';
+    } else if (usedPercent > 50) {
+      colorClass = 'resource-meter-fill-medium';
     }
     
     return `
-      <div class="mb-3">
-        <div class="resource-label mb-1">
-          <span>${label}</span>
-          <span>${value}</span>
+      <div class="resource-meter">
+        <div class="resource-meter-label">
+          <span class="resource-meter-name">${label}</span>
+          <span class="resource-meter-value">${value}</span>
         </div>
-        <div class="resource-meter">
-          <div class="resource-meter-fill ${meterClass}" style="width: ${usedPercent}%"></div>
+        <div class="resource-meter-bar">
+          <div class="resource-meter-fill ${colorClass}" style="width: ${usedPercent}%"></div>
         </div>
       </div>
     `;

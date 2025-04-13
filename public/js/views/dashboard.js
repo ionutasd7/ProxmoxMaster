@@ -831,7 +831,9 @@ export class DashboardView {
         {
           data: [30, 70],
           backgroundColor: ['#53c986', '#ff5252'],
-          hoverOffset: 4
+          hoverOffset: 4,
+          borderWidth: 1,
+          borderColor: 'rgba(0, 0, 0, 0.1)'
         }
       ]
     };
@@ -842,19 +844,55 @@ export class DashboardView {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '70%',
         plugins: {
           legend: {
             position: 'bottom',
             labels: {
-              color: 'rgb(240, 240, 240)'
+              color: 'rgb(240, 240, 240)',
+              font: {
+                family: 'Inter, sans-serif',
+                size: 12
+              },
+              padding: 15,
+              boxWidth: 15,
+              boxHeight: 15,
+              usePointStyle: true,
+              pointStyle: 'circle'
             }
           },
           title: {
             display: true,
             text: 'Storage Usage',
-            color: 'rgb(240, 240, 240)'
+            color: 'rgb(240, 240, 240)',
+            font: {
+              family: 'Inter, sans-serif',
+              size: 14,
+              weight: 'normal'
+            },
+            padding: {
+              bottom: 15
+            }
+          },
+          tooltip: {
+            backgroundColor: 'rgba(42, 42, 42, 0.9)',
+            titleColor: 'rgb(240, 240, 240)',
+            bodyColor: 'rgb(240, 240, 240)',
+            borderColor: 'var(--accent-primary)',
+            borderWidth: 1,
+            padding: 10,
+            titleFont: {
+              family: 'Inter, sans-serif',
+              weight: 'bold'
+            },
+            bodyFont: {
+              family: 'Inter, sans-serif'
+            },
+            cornerRadius: 6,
+            boxPadding: 5
           }
-        }
+        },
+        backgroundColor: 'transparent'
       }
     };
     
@@ -915,11 +953,32 @@ export class DashboardView {
         legend: {
           position: 'top',
           labels: {
-            color: 'rgb(240, 240, 240)'
+            color: 'rgb(240, 240, 240)',
+            font: {
+              family: 'Inter, sans-serif'
+            }
           }
         },
         title: {
           display: false
+        },
+        tooltip: {
+          backgroundColor: 'rgba(42, 42, 42, 0.9)',
+          titleColor: 'rgb(240, 240, 240)',
+          bodyColor: 'rgb(240, 240, 240)',
+          borderColor: 'var(--accent-primary)',
+          borderWidth: 1,
+          padding: 10,
+          titleFont: {
+            family: 'Inter, sans-serif',
+            size: 14,
+            weight: 'bold'
+          },
+          bodyFont: {
+            family: 'Inter, sans-serif',
+            size: 13
+          },
+          cornerRadius: 6
         }
       },
       scales: {
@@ -928,7 +987,13 @@ export class DashboardView {
             color: 'rgba(255, 255, 255, 0.1)'
           },
           ticks: {
-            color: 'rgb(200, 200, 200)'
+            color: 'rgb(200, 200, 200)',
+            font: {
+              family: 'Inter, sans-serif'
+            }
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.2)'
           }
         },
         y: {
@@ -936,15 +1001,27 @@ export class DashboardView {
             color: 'rgba(255, 255, 255, 0.1)'
           },
           ticks: {
-            color: 'rgb(200, 200, 200)'
+            color: 'rgb(200, 200, 200)',
+            font: {
+              family: 'Inter, sans-serif'
+            }
           },
           title: {
             display: true,
             text: yAxisTitle,
-            color: 'rgb(200, 200, 200)'
+            color: 'rgb(200, 200, 200)',
+            font: {
+              family: 'Inter, sans-serif',
+              size: 12
+            }
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.2)'
           }
         }
-      }
+      },
+      color: 'rgb(240, 240, 240)',
+      backgroundColor: 'transparent'
     };
   }
   

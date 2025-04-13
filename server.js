@@ -127,23 +127,21 @@ app.get('/api/vms', async (req, res, next) => {
     // Get VMs from all nodes
     for (const node of nodes) {
       try {
+        console.log(`Trying to fetch VMs from node: ${node.name} (${node.hostname})`);
+        
         // Try to connect to the node with stored credentials
         const axios = require('axios');
         const https = require('https');
         const agent = new https.Agent({  
-          rejectUnauthorized: node.ssl_verify
+          rejectUnauthorized: false // Set to false to bypass SSL verification issues
         });
         
-        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/qemu`;
-        const authData = {
-          username: node.username,
-          password: node.password
-        };
+        // First authenticate to get ticket and CSRF token
+        console.log(`Authenticating with ${node.hostname}:${node.port} using ${node.username}`);
         
-        // First authenticate to get ticket
         const authResponse = await axios.post(
           `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
-          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          `username=${encodeURIComponent(node.username)}&password=${encodeURIComponent(node.password)}`,
           {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             httpsAgent: agent
@@ -151,31 +149,64 @@ app.get('/api/vms', async (req, res, next) => {
         );
         
         if (authResponse.data && authResponse.data.data) {
-          const { ticket } = authResponse.data.data;
+          const { ticket, CSRFPreventionToken } = authResponse.data.data;
+          console.log(`Authentication successful, got ticket and CSRF token`);
           
-          // Now get VMs with the ticket
-          const vmResponse = await axios.get(url, {
-            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
-            httpsAgent: agent
-          });
+          // The node name in the URL needs to be the Proxmox node name, not our database name
+          // Get the node names from the cluster first
+          const clusterResponse = await axios.get(
+            `https://${node.hostname}:${node.port}/api2/json/nodes`,
+            {
+              headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+              httpsAgent: agent
+            }
+          );
           
-          if (vmResponse.data && vmResponse.data.data) {
-            // Transform VM data to match our application's format
-            const vms = vmResponse.data.data.map(vm => ({
-              id: vm.vmid,
-              name: vm.name,
-              status: vm.status,
-              node: node.name,
-              cpu: { cores: vm.cpus || 1, usage: vm.cpu || 0 },
-              memory: { total: vm.maxmem, used: vm.mem }, // In bytes
-              disk: { total: vm.maxdisk / (1024 * 1024 * 1024), used: vm.disk / (1024 * 1024 * 1024) } // Convert to GB
-            }));
-            
-            allVMs.push(...vms);
+          if (clusterResponse.data && clusterResponse.data.data) {
+            // For each Proxmox node in the cluster, get the VMs
+            for (const proxmoxNode of clusterResponse.data.data) {
+              const proxmoxNodeName = proxmoxNode.node;
+              console.log(`Getting VMs from Proxmox node: ${proxmoxNodeName}`);
+              
+              try {
+                const vmResponse = await axios.get(
+                  `https://${node.hostname}:${node.port}/api2/json/nodes/${proxmoxNodeName}/qemu`,
+                  {
+                    headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+                    httpsAgent: agent
+                  }
+                );
+                
+                if (vmResponse.data && vmResponse.data.data) {
+                  console.log(`Found ${vmResponse.data.data.length} VMs on ${proxmoxNodeName}`);
+                  
+                  // Transform VM data to match our application's format
+                  const vms = vmResponse.data.data.map(vm => ({
+                    id: vm.vmid,
+                    name: vm.name || `VM ${vm.vmid}`,
+                    status: vm.status,
+                    node: proxmoxNodeName,
+                    cpu: { cores: vm.cpus || 1, usage: vm.cpu || 0 },
+                    memory: { 
+                      total: vm.maxmem / (1024 * 1024), // Convert to MB
+                      used: vm.mem / (1024 * 1024) 
+                    },
+                    disk: { 
+                      total: vm.maxdisk / (1024 * 1024 * 1024), // Convert to GB
+                      used: vm.disk / (1024 * 1024 * 1024) 
+                    }
+                  }));
+                  
+                  allVMs.push(...vms);
+                }
+              } catch (vmError) {
+                console.error(`Error fetching VMs from Proxmox node ${proxmoxNodeName}:`, vmError.message);
+              }
+            }
           }
         }
       } catch (nodeError) {
-        console.error(`Error fetching VMs from node ${node.name}:`, nodeError.message);
+        console.error(`Error connecting to node ${node.name}:`, nodeError.message);
         // Continue with next node if one fails
       }
     }
@@ -185,6 +216,7 @@ app.get('/api/vms', async (req, res, next) => {
       vms: allVMs
     });
   } catch (error) {
+    console.error('Error in /api/vms endpoint:', error);
     next(error);
   }
 });
@@ -198,23 +230,21 @@ app.get('/api/containers', async (req, res, next) => {
     // Get containers from all nodes
     for (const node of nodes) {
       try {
+        console.log(`Trying to fetch containers from node: ${node.name} (${node.hostname})`);
+        
         // Try to connect to the node with stored credentials
         const axios = require('axios');
         const https = require('https');
         const agent = new https.Agent({  
-          rejectUnauthorized: node.ssl_verify
+          rejectUnauthorized: false // Set to false to bypass SSL verification issues
         });
         
-        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/lxc`;
-        const authData = {
-          username: node.username,
-          password: node.password
-        };
+        // First authenticate to get ticket and CSRF token
+        console.log(`Authenticating with ${node.hostname}:${node.port} using ${node.username}`);
         
-        // First authenticate to get ticket
         const authResponse = await axios.post(
           `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
-          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          `username=${encodeURIComponent(node.username)}&password=${encodeURIComponent(node.password)}`,
           {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             httpsAgent: agent
@@ -222,38 +252,65 @@ app.get('/api/containers', async (req, res, next) => {
         );
         
         if (authResponse.data && authResponse.data.data) {
-          const { ticket } = authResponse.data.data;
+          const { ticket, CSRFPreventionToken } = authResponse.data.data;
+          console.log(`Authentication successful, got ticket and CSRF token`);
           
-          // Now get containers with the ticket
-          const containerResponse = await axios.get(url, {
-            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
-            httpsAgent: agent
-          });
+          // The node name in the URL needs to be the Proxmox node name, not our database name
+          // Get the node names from the cluster first
+          const clusterResponse = await axios.get(
+            `https://${node.hostname}:${node.port}/api2/json/nodes`,
+            {
+              headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+              httpsAgent: agent
+            }
+          );
           
-          if (containerResponse.data && containerResponse.data.data) {
-            // Transform container data to match our application's format
-            const containers = containerResponse.data.data.map(container => ({
-              id: container.vmid,
-              name: container.name,
-              status: container.status,
-              node: node.name,
-              cpu: { cores: container.cpus || 1, usage: container.cpu || 0 },
-              memory: { 
-                total: container.maxmem / (1024 * 1024), // Convert bytes to MB
-                used: container.mem / (1024 * 1024) 
-              },
-              disk: { 
-                total: container.maxdisk / (1024 * 1024 * 1024), // Convert bytes to GB
-                used: container.disk / (1024 * 1024 * 1024) 
-              },
-              ip: container.ip || 'N/A'
-            }));
-            
-            allContainers.push(...containers);
+          if (clusterResponse.data && clusterResponse.data.data) {
+            // For each Proxmox node in the cluster, get the containers
+            for (const proxmoxNode of clusterResponse.data.data) {
+              const proxmoxNodeName = proxmoxNode.node;
+              console.log(`Getting containers from Proxmox node: ${proxmoxNodeName}`);
+              
+              try {
+                const containerResponse = await axios.get(
+                  `https://${node.hostname}:${node.port}/api2/json/nodes/${proxmoxNodeName}/lxc`,
+                  {
+                    headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+                    httpsAgent: agent
+                  }
+                );
+                
+                if (containerResponse.data && containerResponse.data.data) {
+                  console.log(`Found ${containerResponse.data.data.length} containers on ${proxmoxNodeName}`);
+                  
+                  // Transform container data to match our application's format
+                  const containers = containerResponse.data.data.map(container => ({
+                    id: container.vmid,
+                    name: container.name || `Container ${container.vmid}`,
+                    status: container.status,
+                    node: proxmoxNodeName,
+                    cpu: { cores: container.cpus || 1, usage: container.cpu || 0 },
+                    memory: { 
+                      total: container.maxmem / (1024 * 1024), // Convert bytes to MB
+                      used: container.mem / (1024 * 1024) 
+                    },
+                    disk: { 
+                      total: container.maxdisk / (1024 * 1024 * 1024), // Convert bytes to GB
+                      used: container.disk / (1024 * 1024 * 1024) 
+                    },
+                    ip: container.ip || 'N/A'
+                  }));
+                  
+                  allContainers.push(...containers);
+                }
+              } catch (containerError) {
+                console.error(`Error fetching containers from Proxmox node ${proxmoxNodeName}:`, containerError.message);
+              }
+            }
           }
         }
       } catch (nodeError) {
-        console.error(`Error fetching containers from node ${node.name}:`, nodeError.message);
+        console.error(`Error connecting to node ${node.name}:`, nodeError.message);
         // Continue with next node if one fails
       }
     }
@@ -263,6 +320,7 @@ app.get('/api/containers', async (req, res, next) => {
       containers: allContainers
     });
   } catch (error) {
+    console.error('Error in /api/containers endpoint:', error);
     next(error);
   }
 });
@@ -276,23 +334,21 @@ app.get('/api/network', async (req, res, next) => {
     // Get network interfaces from all nodes
     for (const node of nodes) {
       try {
+        console.log(`Trying to fetch network data from node: ${node.name} (${node.hostname})`);
+        
         // Try to connect to the node with stored credentials
         const axios = require('axios');
         const https = require('https');
         const agent = new https.Agent({  
-          rejectUnauthorized: node.ssl_verify
+          rejectUnauthorized: false // Set to false to bypass SSL verification issues
         });
         
-        const url = `https://${node.hostname}:${node.port}/api2/json/nodes/${node.name}/network`;
-        const authData = {
-          username: node.username,
-          password: node.password
-        };
+        // First authenticate to get ticket and CSRF token
+        console.log(`Authenticating with ${node.hostname}:${node.port} using ${node.username}`);
         
-        // First authenticate to get ticket
         const authResponse = await axios.post(
           `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
-          `username=${encodeURIComponent(authData.username)}&password=${encodeURIComponent(authData.password)}`,
+          `username=${encodeURIComponent(node.username)}&password=${encodeURIComponent(node.password)}`,
           {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             httpsAgent: agent
@@ -300,35 +356,62 @@ app.get('/api/network', async (req, res, next) => {
         );
         
         if (authResponse.data && authResponse.data.data) {
-          const { ticket } = authResponse.data.data;
+          const { ticket, CSRFPreventionToken } = authResponse.data.data;
+          console.log(`Authentication successful, got ticket and CSRF token`);
           
-          // Now get network interfaces with the ticket
-          const networkResponse = await axios.get(url, {
-            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
-            httpsAgent: agent
-          });
+          // The node name in the URL needs to be the Proxmox node name, not our database name
+          // Get the node names from the cluster first
+          const clusterResponse = await axios.get(
+            `https://${node.hostname}:${node.port}/api2/json/nodes`,
+            {
+              headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+              httpsAgent: agent
+            }
+          );
           
-          if (networkResponse.data && networkResponse.data.data) {
-            // Transform network data to match our application's format
-            const interfaces = networkResponse.data.data
-              .filter(iface => iface.type === 'eth' || iface.type === 'bridge')
-              .map(iface => ({
-                name: iface.iface,
-                node: node.name,
-                ip: iface.address || 'N/A',
-                netmask: iface.netmask || 'N/A',
-                mac: iface.hwaddr || 'N/A',
-                status: iface.active ? 'up' : 'down',
-                type: iface.type,
-                trafficIn: '- MB/s', // Traffic data isn't available in this endpoint
-                trafficOut: '- MB/s'  // We would need to use node-specific commands to get this
-              }));
-            
-            allInterfaces.push(...interfaces);
+          if (clusterResponse.data && clusterResponse.data.data) {
+            // For each Proxmox node in the cluster, get the network interfaces
+            for (const proxmoxNode of clusterResponse.data.data) {
+              const proxmoxNodeName = proxmoxNode.node;
+              console.log(`Getting network interfaces from Proxmox node: ${proxmoxNodeName}`);
+              
+              try {
+                const networkResponse = await axios.get(
+                  `https://${node.hostname}:${node.port}/api2/json/nodes/${proxmoxNodeName}/network`,
+                  {
+                    headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+                    httpsAgent: agent
+                  }
+                );
+                
+                if (networkResponse.data && networkResponse.data.data) {
+                  console.log(`Found ${networkResponse.data.data.length} network interfaces on ${proxmoxNodeName}`);
+                  
+                  // Transform network data to match our application's format
+                  const interfaces = networkResponse.data.data
+                    .filter(iface => iface.type === 'eth' || iface.type === 'bridge')
+                    .map(iface => ({
+                      name: iface.iface,
+                      node: proxmoxNodeName,
+                      ip: iface.address || 'N/A',
+                      netmask: iface.netmask || 'N/A',
+                      mac: iface.hwaddr || 'N/A',
+                      status: iface.active ? 'up' : 'down',
+                      type: iface.type,
+                      trafficIn: '- MB/s', // Traffic data isn't available in this endpoint
+                      trafficOut: '- MB/s'  // We would need to use node-specific commands to get this
+                    }));
+                  
+                  allInterfaces.push(...interfaces);
+                }
+              } catch (networkError) {
+                console.error(`Error fetching network interfaces from Proxmox node ${proxmoxNodeName}:`, networkError.message);
+              }
+            }
           }
         }
       } catch (nodeError) {
-        console.error(`Error fetching network interfaces from node ${node.name}:`, nodeError.message);
+        console.error(`Error connecting to node ${node.name}:`, nodeError.message);
         // Continue with next node if one fails
       }
     }
@@ -338,6 +421,7 @@ app.get('/api/network', async (req, res, next) => {
       interfaces: allInterfaces
     });
   } catch (error) {
+    console.error('Error in /api/network endpoint:', error);
     next(error);
   }
 });

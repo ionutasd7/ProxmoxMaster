@@ -505,20 +505,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const port = document.getElementById('node-port').value;
     const username = document.getElementById('api-username').value;
     const password = document.getElementById('api-password').value;
-    const sshUsername = document.getElementById('ssh-username').value;
-    const sshPassword = document.getElementById('ssh-password').value;
+    const sshUsername = document.getElementById('ssh-username').value || '';
+    const sshPassword = document.getElementById('ssh-password').value || '';
     
     // Create node object
     const newNode = {
       name,
       hostname,
-      username, // Match the backend field name
-      password, // Match the backend field name
+      username,
+      password,
       port: parseInt(port, 10),
       ssh_username: sshUsername,
       ssh_password: sshPassword,
       ssl_verify: true,
-      node_status: 'connecting'
+      node_status: 'unknown' // Default status until connection is verified
     };
     
     // Show loading message
@@ -528,11 +528,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="spinner-border text-primary" role="status">
           <span class="visually-hidden">Loading...</span>
         </div>
-        <p class="mt-2">Connecting to ${hostname}...</p>
+        <p class="mt-2">Adding node ${hostname}...</p>
       </div>
     `;
     
     try {
+      console.log('Adding node with data:', JSON.stringify(newNode));
+      
       // Make API call to add the node
       const response = await fetch('/api/nodes', {
         method: 'POST',
@@ -542,15 +544,22 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify(newNode)
       });
       
+      const result = await response.json();
+      console.log('Server response:', result);
+      
       if (!response.ok) {
         throw new Error(`Failed to add node: ${response.statusText}`);
       }
       
-      const result = await response.json();
-      
       if (result.success) {
-        // Update node in state
-        await loadApplicationData(); // Reload all data including the new node
+        // Update state with the newly added node
+        if (result.node) {
+          // If the server returns the node, add it directly to the state
+          state.nodes.push(result.node);
+        } else {
+          // Otherwise reload all data
+          await loadApplicationData();
+        }
         
         // Refresh the nodes table
         refreshNodesTable();

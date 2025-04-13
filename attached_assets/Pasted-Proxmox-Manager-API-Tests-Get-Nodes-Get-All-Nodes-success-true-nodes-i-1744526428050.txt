@@ -1,0 +1,162 @@
+Proxmox Manager API Tests
+
+Get Nodes
+
+Get All Nodes
+{
+  "success": true,
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Pve",
+      "hostname": "10.55.1.10",
+      "username": "api@pam!home",
+      "password": "8cd15ef7-d25b-4955-9c32-48d42e23b109",
+      "port": 8006,
+      "ssl_verify": true,
+      "created_at": "2025-04-13T06:38:34.008Z",
+      "last_seen": null,
+      "node_status": "unknown"
+    },
+    {
+      "id": 2,
+      "name": "Pve",
+      "hostname": "10.55.1.10",
+      "username": "root@pam",
+      "password": "Poolamea01@",
+      "port": 8006,
+      "ssl_verify": true,
+      "created_at": "2025-04-13T06:38:53.544Z",
+      "last_seen": null,
+      "node_status": "unknown"
+    }
+  ]
+}
+Add Test Node
+
+Add Test Node
+{
+  "success": true,
+  "node": {
+    "id": 3,
+    "name": "test-node-774",
+    "hostname": "test.example.com",
+    "username": "test-api-user",
+    "password": "test-password",
+    "port": 8006,
+    "ssl_verify": false,
+    "created_at": "2025-04-13T06:39:28.102Z",
+    "last_seen": null,
+    "node_status": "unknown"
+  }
+}
+Get VMs
+
+Get All VMs
+{
+  "success": true,
+  "vms": []
+}
+Get Containers
+
+Get All Containers
+{
+  "success": true,
+  "containers": []
+}
+Get Network
+
+Get Network Data
+{
+  "success": true,
+  "interfaces": []
+}
+Get Updates
+
+Get Updates Data
+{
+  "success": true,
+  "updates": {
+    "node": [
+      {
+        "package": "pve-kernel-5.15",
+        "currentVersion": "5.15.102-1",
+        "newVersion": "5.15.107-1",
+        "priority": "security",
+        "type": "Kernel"
+      },
+      {
+        "package": "openssl",
+        "currentVersion": "3.0.9-1",
+        "newVersion": "3.0.11-1",
+        "priority": "security",
+        "type": "System"
+      },
+      {
+        "package": "qemu-server",
+        "currentVersion": "7.2.0-3",
+        "newVersion": "7.2.0-5",
+        "priority": "important",
+        "type": "System"
+      }
+    ],
+    "vms": [
+      {
+        "id": 101,
+        "name": "web-server",
+        "status": "running",
+        "package": "linux-image-generic",
+        "currentVersion": "5.15.0-78",
+        "newVersion": "5.15.0-82",
+        "priority": "security"
+      },
+      {
+        "id": 101,
+        "name": "web-server",
+        "status": "running",
+        "package": "openssl",
+        "currentVersion": "3.0.2-0ubuntu1.9",
+        "newVersion": "3.0.2-0ubuntu1.10",
+        "priority": "security"
+      },
+      {
+        "id": 102,
+        "name": "db-server",
+        "status": "running",
+        "package": "mysql-server",
+        "currentVersion": "8.0.32-0ubuntu0.22.04.2",
+        "newVersion": "8.0.34-0ubuntu0.22.04.1",
+        "priority": "important"
+      }
+    ],
+    "containers": [
+      {
+        "id": 201,
+        "name": "nginx-proxy",
+        "status": "running",
+        "package": "nginx",
+        "currentVersion": "1.22.1-1~bookworm",
+        "newVersion": "1.24.0-2~bookworm",
+        "priority": "important"
+      },
+      {
+        "id": 201,
+        "name": "nginx-proxy",
+        "status": "running",
+        "package": "openssl",
+        "currentVersion": "3.0.9-1",
+        "newVersion": "3.0.11-1",
+        "priority": "security"
+      },
+      {
+        "id": 202,
+        "name": "redis-cache",
+        "status": "running",
+        "package": "redis-server",
+        "currentVersion": "6:7.0.11-1~deb12u1",
+        "newVersion": "6:7.0.15-1~deb12u1",
+        "priority": "security"
+      }
+    ]
+  }
+}

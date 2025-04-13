@@ -3222,7 +3222,19 @@ iface eth1 inet static
   function loadMonitoringView() {
     const mainContent = document.querySelector('.main-content');
     
-    mainContent.innerHTML = `
+    // Initialize the resource monitoring component directly in the main content
+    try {
+      // Call the simplified monitoring component
+      if (typeof window.SimpleMonitoring === 'function') {
+        window.SimpleMonitoring({
+          nodes: state.nodes
+        });
+      } else {
+        throw new Error('SimpleMonitoring component not found');
+      }
+    } catch (error) {
+      console.error('Error initializing resource monitoring:', error);
+      mainContent.innerHTML = `
       ${getCommonHeader('Resource Monitoring')}
       
       <div class="row mb-4">

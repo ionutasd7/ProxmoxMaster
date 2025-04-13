@@ -1,184 +1,151 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Proxmox Manager Test</title>
+  <meta charset="UTF-8">
+  <title>Proxmox Manager Debug</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
-      background-color: #f0f0f0;
+      background-color: #f5f5f5;
+      margin: 20px;
     }
-    .container {
-      max-width: 800px;
-      margin: 0 auto;
+    
+    #output {
       background-color: #fff;
+      border: 1px solid #ddd;
       padding: 20px;
       border-radius: 5px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      margin-top: 20px;
     }
+    
     h1 {
       color: #333;
     }
-    .btn {
+    
+    button {
       background-color: #4CAF50;
-      border: none;
       color: white;
       padding: 10px 15px;
-      text-align: center;
-      text-decoration: none;
-      display: inline-block;
-      font-size: 16px;
-      margin: 4px 2px;
+      border: none;
+      border-radius: 4px;
       cursor: pointer;
-      border-radius: 4px;
+      margin-right: 10px;
     }
-    .result {
-      margin-top: 20px;
-      padding: 15px;
-      background-color: #f9f9f9;
-      border-left: 4px solid #4CAF50;
-    }
-    pre {
-      overflow-x: auto;
-      background-color: #f5f5f5;
-      padding: 10px;
-      border-radius: 4px;
+    
+    button:hover {
+      background-color: #45a049;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Proxmox Manager API Tests</h1>
-    
-    <h2>Get Nodes</h2>
-    <button id="getNodesBtn" class="btn">Get All Nodes</button>
-    <div id="nodesResult" class="result">Results will appear here...</div>
-    
-    <h2>Add Test Node</h2>
-    <button id="addNodeBtn" class="btn">Add Test Node</button>
-    <div id="addNodeResult" class="result">Results will appear here...</div>
-
-    <h2>Get VMs</h2>
-    <button id="getVMsBtn" class="btn">Get All VMs</button>
-    <div id="vmsResult" class="result">Results will appear here...</div>
-    
-    <h2>Get Containers</h2>
-    <button id="getContainersBtn" class="btn">Get All Containers</button>
-    <div id="containersResult" class="result">Results will appear here...</div>
-    
-    <h2>Get Network</h2>
-    <button id="getNetworkBtn" class="btn">Get Network Data</button>
-    <div id="networkResult" class="result">Results will appear here...</div>
-    
-    <h2>Get Updates</h2>
-    <button id="getUpdatesBtn" class="btn">Get Updates Data</button>
-    <div id="updatesResult" class="result">Results will appear here...</div>
+  <h1>Proxmox Manager Debug Tool</h1>
+  
+  <div>
+    <button id="test-btn">Test Client-Side</button>
+    <button id="api-btn">Test API</button>
+    <button id="db-btn">Test Database</button>
   </div>
-
+  
+  <div id="output">
+    <p>Debug output will appear here...</p>
+  </div>
+  
   <script>
-    // Helper function to format JSON response
-    function formatResponse(data) {
-      return JSON.stringify(data, null, 2);
-    }
-    
-    // Get Nodes
-    document.getElementById('getNodesBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('nodesResult');
-      resultDiv.innerHTML = 'Loading...';
+    document.getElementById('test-btn').addEventListener('click', function() {
+      const output = document.getElementById('output');
       
       try {
-        const response = await fetch('/api/nodes');
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+        output.innerHTML = '<h3>Running client-side tests...</h3>';
+        
+        // Test imports
+        output.innerHTML += '<p>Testing window objects...</p>';
+        const objects = ['Chart', 'SimpleMonitoring', 'ResourceMonitoring'];
+        
+        objects.forEach(obj => {
+          if (window[obj]) {
+            output.innerHTML += `<p style="color:green">✓ ${obj} is available</p>`;
+          } else {
+            output.innerHTML += `<p style="color:red">✗ ${obj} is NOT available</p>`;
+          }
+        });
+        
+        // Create a test container
+        output.innerHTML += '<p>Testing DOM manipulation...</p>';
+        const testDiv = document.createElement('div');
+        testDiv.className = 'main-content';
+        testDiv.style.border = '1px solid #ccc';
+        testDiv.style.padding = '10px';
+        testDiv.style.marginTop = '10px';
+        output.appendChild(testDiv);
+        
+        // Test SimpleMonitoring if available
+        if (window.SimpleMonitoring) {
+          output.innerHTML += '<p>Testing SimpleMonitoring render...</p>';
+          try {
+            window.SimpleMonitoring({
+              nodes: [
+                { id: 1, name: 'Test Node', hostname: 'test.local' }
+              ]
+            });
+            output.innerHTML += `<p style="color:green">✓ SimpleMonitoring rendered</p>`;
+          } catch (err) {
+            output.innerHTML += `<p style="color:red">✗ SimpleMonitoring error: ${err.message}</p>`;
+            console.error('SimpleMonitoring error:', err);
+          }
+        }
+      } catch (err) {
+        output.innerHTML += `<p style="color:red">Error: ${err.message}</p>`;
+        console.error('Test error:', err);
       }
     });
     
-    // Add Test Node
-    document.getElementById('addNodeBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('addNodeResult');
-      resultDiv.innerHTML = 'Adding test node...';
-      
-      const testNode = {
-        name: 'test-node-' + Math.floor(Math.random() * 1000),
-        hostname: 'test.example.com',
-        username: 'test-api-user', 
-        password: 'test-password',
-        port: 8006,
-        ssl_verify: false
-      };
+    document.getElementById('api-btn').addEventListener('click', async function() {
+      const output = document.getElementById('output');
+      output.innerHTML = '<h3>Testing API endpoints...</h3>';
       
       try {
-        const response = await fetch('/api/nodes', {
+        // Test /api/status
+        output.innerHTML += '<p>Testing /api/status endpoint...</p>';
+        const statusRes = await fetch('/api/status');
+        const statusData = await statusRes.json();
+        output.innerHTML += `<p style="color:green">✓ Status API: ${JSON.stringify(statusData)}</p>`;
+        
+        // Test nodes
+        output.innerHTML += '<p>Testing /api/nodes endpoint...</p>';
+        const nodesRes = await fetch('/api/nodes');
+        const nodesData = await nodesRes.json();
+        output.innerHTML += `<p style="color:green">✓ Nodes API: Found ${nodesData.nodes ? nodesData.nodes.length : 0} nodes</p>`;
+      } catch (err) {
+        output.innerHTML += `<p style="color:red">API Error: ${err.message}</p>`;
+        console.error('API test error:', err);
+      }
+    });
+    
+    document.getElementById('db-btn').addEventListener('click', async function() {
+      const output = document.getElementById('output');
+      output.innerHTML = '<h3>Testing Database Connection...</h3>';
+      
+      try {
+        // We'll use a proxy API endpoint to test the database
+        output.innerHTML += '<p>Attempting to connect to database via API...</p>';
+        
+        const authRes = await fetch('/api/auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(testNode)
+          body: JSON.stringify({
+            host: 'localhost',
+            username: 'admin',
+            password: 'admin'
+          })
         });
         
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
-      }
-    });
-    
-    // Get VMs
-    document.getElementById('getVMsBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('vmsResult');
-      resultDiv.innerHTML = 'Loading...';
-      
-      try {
-        const response = await fetch('/api/vms');
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
-      }
-    });
-    
-    // Get Containers
-    document.getElementById('getContainersBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('containersResult');
-      resultDiv.innerHTML = 'Loading...';
-      
-      try {
-        const response = await fetch('/api/containers');
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
-      }
-    });
-    
-    // Get Network
-    document.getElementById('getNetworkBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('networkResult');
-      resultDiv.innerHTML = 'Loading...';
-      
-      try {
-        const response = await fetch('/api/network');
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
-      }
-    });
-    
-    // Get Updates
-    document.getElementById('getUpdatesBtn').addEventListener('click', async () => {
-      const resultDiv = document.getElementById('updatesResult');
-      resultDiv.innerHTML = 'Loading...';
-      
-      try {
-        const response = await fetch('/api/updates');
-        const data = await response.json();
-        resultDiv.innerHTML = `<pre>${formatResponse(data)}</pre>`;
-      } catch (error) {
-        resultDiv.innerHTML = `<p>Error: ${error.message}</p>`;
+        const authData = await authRes.json();
+        output.innerHTML += `<p style="color:green">✓ Authentication successful: ${JSON.stringify(authData)}</p>`;
+      } catch (err) {
+        output.innerHTML += `<p style="color:red">Database Error: ${err.message}</p>`;
+        console.error('Database test error:', err);
       }
     });
   </script>

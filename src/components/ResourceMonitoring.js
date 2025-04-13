@@ -1392,5 +1392,5 @@ function ResourceMonitoring({ nodes, authData, refreshData, setError }) {
   }
 }
 
-// Export the component
-module.exports = ResourceMonitoring;
+// Make the function globally available
+window.ResourceMonitoring = ResourceMonitoring;

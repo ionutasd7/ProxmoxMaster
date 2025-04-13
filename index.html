@@ -367,6 +367,25 @@
     ::-webkit-scrollbar-thumb:hover {
       background: var(--neon-cyan);
     }
+    
+    /* Chart container styles */
+    .chart-container {
+      position: relative;
+      height: 200px;
+    }
+    
+    .chart-loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: rgba(10, 14, 23, 0.7);
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
@@ -377,6 +396,9 @@
   
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+  
+  <!-- Resource Monitoring Component -->
+  <script src="src/components/SimpleMonitoring.js"></script>
   
   <!-- Application entry point -->
   <script src="renderer.js"></script>

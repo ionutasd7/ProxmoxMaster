@@ -160,18 +160,170 @@ app.post('/api/logout', (req, res) => {
 });
 
 // Global VMs and containers endpoints (used for dashboard data)
-app.get('/api/vms', (req, res) => {
-  res.json({
-    success: true,
-    vms: [] // Initially empty, will be populated when nodes are added
-  });
+app.get('/api/vms', async (req, res) => {
+  try {
+    // Get all nodes from database
+    const nodesResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes'
+    );
+    
+    if (nodesResult.rowCount === 0) {
+      return res.json({
+        success: true,
+        vms: []
+      });
+    }
+    
+    const nodes = nodesResult.rows;
+    let allVMs = [];
+    
+    // For each node, get VMs
+    for (const dbNode of nodes) {
+      try {
+        // Map to expected format for API calls
+        const node = {
+          name: dbNode.name,
+          api_host: dbNode.hostname,
+          api_port: dbNode.port || 8006,
+          api_username: dbNode.username,
+          api_password: dbNode.password,
+          api_realm: 'pam',
+          use_ssl: true,
+          verify_ssl: false
+        };
+    
+        const protocol = node.use_ssl ? 'https' : 'http';
+        
+        // Create API client
+        const axiosInstance = axios.create({
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: node.verify_ssl
+          }),
+          timeout: 5000 // 5 second timeout
+        });
+        
+        // Get auth ticket
+        const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+        
+        // Get VMs from node
+        const response = await axiosInstance.get(
+          `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu`,
+          { 
+            headers: {
+              'Cookie': `PVEAuthCookie=${ticket}`
+            }
+          }
+        );
+        
+        const nodeVMs = response.data.data || [];
+        
+        // Add node information to each VM
+        nodeVMs.forEach(vm => {
+          vm.node_id = dbNode.id;
+          vm.node_name = node.name;
+        });
+        
+        allVMs = [...allVMs, ...nodeVMs];
+      } catch (error) {
+        console.error(`Error fetching VMs from node ${dbNode.name}:`, error);
+        // Continue to next node even if this one fails
+      }
+    }
+    
+    res.json({
+      success: true,
+      vms: allVMs
+    });
+  } catch (err) {
+    console.error('Error fetching all VMs:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch VMs' 
+    });
+  }
 });
 
-app.get('/api/containers', (req, res) => {
-  res.json({
-    success: true,
-    containers: [] // Initially empty, will be populated when nodes are added
-  });
+app.get('/api/containers', async (req, res) => {
+  try {
+    // Get all nodes from database
+    const nodesResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes'
+    );
+    
+    if (nodesResult.rowCount === 0) {
+      return res.json({
+        success: true,
+        containers: []
+      });
+    }
+    
+    const nodes = nodesResult.rows;
+    let allContainers = [];
+    
+    // For each node, get containers
+    for (const dbNode of nodes) {
+      try {
+        // Map to expected format for API calls
+        const node = {
+          name: dbNode.name,
+          api_host: dbNode.hostname,
+          api_port: dbNode.port || 8006,
+          api_username: dbNode.username,
+          api_password: dbNode.password,
+          api_realm: 'pam',
+          use_ssl: true,
+          verify_ssl: false
+        };
+    
+        const protocol = node.use_ssl ? 'https' : 'http';
+        
+        // Create API client
+        const axiosInstance = axios.create({
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: node.verify_ssl
+          }),
+          timeout: 5000 // 5 second timeout
+        });
+        
+        // Get auth ticket
+        const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+        
+        // Get containers from node
+        const response = await axiosInstance.get(
+          `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc`,
+          { 
+            headers: {
+              'Cookie': `PVEAuthCookie=${ticket}`
+            }
+          }
+        );
+        
+        const nodeContainers = response.data.data || [];
+        
+        // Add node information to each container
+        nodeContainers.forEach(container => {
+          container.node_id = dbNode.id;
+          container.node_name = node.name;
+        });
+        
+        allContainers = [...allContainers, ...nodeContainers];
+      } catch (error) {
+        console.error(`Error fetching containers from node ${dbNode.name}:`, error);
+        // Continue to next node even if this one fails
+      }
+    }
+    
+    res.json({
+      success: true,
+      containers: allContainers
+    });
+  } catch (err) {
+    console.error('Error fetching all containers:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch containers' 
+    });
+  }
 });
 
 // Database connection
@@ -770,6 +922,96 @@ app.get('/api/nodes/:id/vms', async (req, res) => {
   } catch (err) {
     console.error('Error fetching VMs:', err);
     res.status(500).json({ error: 'Failed to fetch VMs' });
+  }
+});
+
+// VM actions (start, stop, restart)
+app.post('/api/nodes/:nodeId/vms/:vmId/:action', async (req, res) => {
+  try {
+    const { nodeId, vmId, action } = req.params;
+    
+    // Validate action
+    if (!['start', 'stop', 'restart'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action. Supported actions: start, stop, restart' });
+    }
+    
+    // Get node details from database
+    const nodeResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
+      [nodeId]
+    );
+    
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const dbNode = nodeResult.rows[0];
+    
+    // Map to expected format
+    const node = {
+      name: dbNode.name,
+      api_host: dbNode.hostname,
+      api_port: dbNode.port || 8006,
+      api_username: dbNode.username,
+      api_password: dbNode.password,
+      api_realm: 'pam',
+      use_ssl: true,
+      verify_ssl: false
+    };
+    
+    const protocol = node.use_ssl ? 'https' : 'http';
+    
+    try {
+      // Connect to Proxmox API
+      const axiosInstance = axios.create({
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: node.verify_ssl
+        }),
+        timeout: 10000 // Longer timeout for VM operations
+      });
+      
+      // First authenticate to get a ticket
+      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+      
+      // Map our action names to Proxmox API actions
+      const proxmoxAction = action === 'restart' ? 'reset' : action;
+      
+      // Perform the VM action
+      const response = await axiosInstance.post(
+        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu/${vmId}/status/${proxmoxAction}`,
+        {}, // Empty body, as parameters are in URL
+        { 
+          headers: {
+            'Cookie': `PVEAuthCookie=${ticket}`,
+            'CSRFPreventionToken': csrfToken
+          }
+        }
+      );
+      
+      res.json({
+        success: true,
+        message: `VM ${action} operation initiated successfully`,
+        data: response.data
+      });
+    } catch (apiError) {
+      console.error(`Error performing VM ${action} operation:`, apiError);
+      
+      let errorMessage = `Failed to ${action} VM`;
+      if (apiError.response && apiError.response.data) {
+        errorMessage += `: ${apiError.response.data.message || JSON.stringify(apiError.response.data)}`;
+      }
+      
+      res.status(500).json({ 
+        success: false,
+        error: errorMessage
+      });
+    }
+  } catch (err) {
+    console.error(`Error in VM ${req.params.action} operation:`, err);
+    res.status(500).json({ 
+      success: false,
+      error: `Failed to perform ${req.params.action} operation`
+    });
   }
 });
 

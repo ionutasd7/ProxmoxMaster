@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proxmox Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #4cc9f0;
+      --bg-dark: #0a1128;
+      --bg-darker: #050814;
+      --bg-medium: #16213e;
+      --text-light: #e6e6e6;
+      --accent-color: #7209b7;
+      --danger-color: #f72585;
+      --success-color: #4cc9f0;
+      --warning-color: #f7b801;
+      --info-color: #3a86ff;
+    }
+    
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-light);
+      font-family: 'Arial', sans-serif;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+    
+    /* Login Styles */
+    .login-container {
+      max-width: 400px;
+      margin: 80px auto;
+      background-color: var(--bg-medium);
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      padding: 30px;
+      border: 1px solid var(--accent-color);
+    }
+    
+    .login-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .login-header h1 {
+      font-size: 24px;
+      color: var(--primary-color);
+    }
+    
+    .form-control {
+      background-color: var(--bg-darker);
+      border: 1px solid #253566;
+      color: var(--text-light);
+      margin-bottom: 15px;
+    }
+    
+    .form-control:focus {
+      background-color: var(--bg-darker);
+      color: var(--text-light);
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.25rem rgba(76, 201, 240, 0.25);
+    }
+    
+    .btn-login {
+      background-color: var(--primary-color);
+      border: none;
+      width: 100%;
+      padding: 10px;
+      color: var(--bg-darker);
+      font-weight: bold;
+      border-radius: 4px;
+      margin-top: 15px;
+    }
+    
+    .btn-login:hover {
+      background-color: #3db8de;
+    }
+    
+    .error-message {
+      color: var(--danger-color);
+      margin-top: 15px;
+      text-align: center;
+      font-size: 14px;
+    }
+    
+    /* Loading Styles */
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+    }
+    
+    /* Dashboard Styles */
+    .dashboard-container {
+      display: flex;
+      min-height: 100vh;
+    }
+    
+    .sidebar {
+      width: 250px;
+      background-color: var(--bg-darker);
+      color: var(--text-light);
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s;
+    }
+    
+    .sidebar-header {
+      padding: 20px;
+      text-align: center;
+      background-color: rgba(76, 201, 240, 0.1);
+      border-bottom: 1px solid rgba(76, 201, 240, 0.2);
+    }
+    
+    .sidebar-header h2 {
+      margin: 0;
+      font-size: 1.5rem;
+      color: var(--primary-color);
+    }
+    
+    .sidebar-header p {
+      margin: 0;
+      color: rgba(230, 230, 230, 0.7);
+      font-size: 0.8rem;
+    }
+    
+    .sidebar-menu {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      flex-grow: 1;
+    }
+    
+    .sidebar-item {
+      padding: 15px 20px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-left: 3px solid transparent;
+    }
+    
+    .sidebar-item:hover {
+      background-color: rgba(76, 201, 240, 0.1);
+      border-left-color: var(--primary-color);
+    }
+    
+    .sidebar-item.active {
+      background-color: rgba(76, 201, 240, 0.15);
+      border-left-color: var(--primary-color);
+    }
+    
+    .sidebar-item i {
+      margin-right: 10px;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .sidebar-footer {
+      padding: 15px;
+      border-top: 1px solid rgba(76, 201, 240, 0.2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .user-info {
+      display: flex;
+      align-items: center;
+    }
+    
+    .user-info i {
+      margin-right: 10px;
+      font-size: 1.2rem;
+    }
+    
+    .content {
+      flex-grow: 1;
+      background-color: var(--bg-dark);
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .content-header {
+      background-color: var(--bg-medium);
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(76, 201, 240, 0.2);
+    }
+    
+    .header-left {
+      display: flex;
+      align-items: center;
+    }
+    
+    .header-left button {
+      background: none;
+      border: none;
+      color: var(--text-light);
+      margin-right: 15px;
+      cursor: pointer;
+    }
+    
+    .header-right {
+      display: flex;
+      align-items: center;
+    }
+    
+    .node-selector {
+      display: flex;
+      align-items: center;
+      margin-right: 15px;
+    }
+    
+    .node-selector label {
+      margin-right: 10px;
+      white-space: nowrap;
+    }
+    
+    #main-content {
+      padding: 20px;
+      overflow-y: auto;
+      flex-grow: 1;
+    }
+    
+    /* Card Styles */
+    .card {
+      background-color: var(--bg-medium);
+      border: 1px solid #253566;
+      margin-bottom: 20px;
+    }
+    
+    .card-header {
+      background-color: rgba(76, 201, 240, 0.05);
+      border-bottom: 1px solid #253566;
+      padding: 10px 15px;
+    }
+    
+    .glow-border {
+      box-shadow: 0 0 10px rgba(76, 201, 240, 0.1);
+      border: 1px solid rgba(76, 201, 240, 0.3);
+    }
+    
+    /* Table Styles */
+    .table {
+      color: var(--text-light);
+      margin-bottom: 0;
+    }
+    
+    .table-dark {
+      background-color: var(--bg-medium);
+    }
+    
+    .table-hover tbody tr:hover {
+      background-color: rgba(76, 201, 240, 0.1);
+    }
+    
+    /* Progress Bar Styles */
+    .progress {
+      background-color: var(--bg-darker);
+      height: 8px;
+    }
+    
+    .progress-bar {
+      background-color: var(--primary-color);
+    }
+    
+    /* Badge Styles */
+    .badge {
+      padding: 5px 8px;
+      font-weight: normal;
+      font-size: 0.75rem;
+    }
+    
+    /* Button Styles */
+    .btn-primary {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+    
+    .btn-primary:hover {
+      background-color: #3db8de;
+      border-color: #3db8de;
+    }
+    
+    .btn-outline-primary {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+    
+    .btn-outline-primary:hover {
+      background-color: var(--primary-color);
+      color: white;
+    }
+    
+    /* Dashboard Overview Styles */
+    .dashboard-overview .card-body {
+      padding: 20px;
+    }
+    
+    .dashboard-overview h5 {
+      margin-bottom: 15px;
+      font-size: 1rem;
+    }
+    
+    .dashboard-overview h2 {
+      font-size: 2.5rem;
+      margin-bottom: 5px;
+      color: var(--primary-color);
+    }
+    
+    /* Storage Chart Styles */
+    .storage-chart {
+      margin-top: 10px;
+    }
+    
+    .storage-item {
+      margin-bottom: 15px;
+    }
+    
+    .storage-label {
+      margin-bottom: 5px;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .storage-info {
+      text-align: right;
+      margin-top: 5px;
+      font-size: 0.8rem;
+      color: rgba(230, 230, 230, 0.7);
+    }
+    
+    /* Recent Activity Styles */
+    .recent-activity {
+      margin-top: 10px;
+    }
+    
+    .recent-activity-item {
+      display: flex;
+      margin-bottom: 15px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(76, 201, 240, 0.1);
+    }
+    
+    .activity-time {
+      width: 100px;
+      color: rgba(230, 230, 230, 0.7);
+      font-size: 0.8rem;
+    }
+    
+    .activity-content {
+      flex-grow: 1;
+      display: flex;
+      align-items: center;
+    }
+    
+    .activity-content i {
+      margin-right: 10px;
+      width: 16px;
+      text-align: center;
+    }
+    
+    /* Modal Styles */
+    .modal-content {
+      background-color: var(--bg-medium);
+      color: var(--text-light);
+    }
+    
+    .modal-header {
+      border-bottom: 1px solid #253566;
+    }
+    
+    .modal-footer {
+      border-top: 1px solid #253566;
+    }
+    
+    /* Notification Styles */
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 5px;
+      background-color: var(--bg-medium);
+      color: var(--text-light);
+      z-index: 9999;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      animation: notification-enter 0.3s ease-out;
+      max-width: 350px;
+      border-left: 4px solid var(--primary-color);
+    }
+    
+    .notification-content {
+      display: flex;
+      align-items: center;
+    }
+    
+    .notification-content i {
+      margin-right: 10px;
+      font-size: 1.2rem;
+    }
+    
+    .notification-success {
+      border-left-color: var(--success-color);
+    }
+    
+    .notification-error {
+      border-left-color: var(--danger-color);
+    }
+    
+    .notification-info {
+      border-left-color: var(--info-color);
+    }
+    
+    .notification-warning {
+      border-left-color: var(--warning-color);
+    }
+    
+    .notification-hide {
+      animation: notification-exit 0.3s ease-in forwards;
+    }
+    
+    @keyframes notification-enter {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    
+    @keyframes notification-exit {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+    }
+    
+    /* Responsive Styles */
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 60px;
+      }
+      
+      .sidebar-item span {
+        display: none;
+      }
+      
+      .sidebar-header h2, .sidebar-header p {
+        display: none;
+      }
+      
+      .user-info span {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app-container"></div>
+  
+  <script src="renderer-new.js"></script>
+</body>
+</html>

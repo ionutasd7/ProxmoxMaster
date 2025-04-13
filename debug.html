@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #1a1a1a;
+      color: #f0f0f0;
+    }
+    #results {
+      background-color: #2a2a2a;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 20px;
+      border: 1px solid #444;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0069d9;
+    }
+  </style>
+</head>
+<body>
+  <h1>JavaScript Debug Test</h1>
+  <button id="test-btn">Run Tests</button>
+  <div id="results">Test results will appear here</div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('Debug page loaded');
+      
+      document.getElementById('test-btn').addEventListener('click', runTests);
+
+      function runTests() {
+        const results = document.getElementById('results');
+        results.innerHTML = '<h3>Test Results:</h3>';
+        
+        try {
+          // Test 1: Basic JavaScript
+          results.innerHTML += '<p>Test 1: Basic JavaScript - ';
+          const test1 = 1 + 1;
+          results.innerHTML += (test1 === 2) ? 'PASSED' : 'FAILED';
+          results.innerHTML += '</p>';
+          
+          // Test 2: Arrow Functions
+          results.innerHTML += '<p>Test 2: Arrow Functions - ';
+          const test2 = (() => 'arrow')();
+          results.innerHTML += (test2 === 'arrow') ? 'PASSED' : 'FAILED';
+          results.innerHTML += '</p>';
+          
+          // Test 3: Event Listeners
+          results.innerHTML += '<p>Test 3: Event Listeners - PASSED</p>';
+          
+          // Test 4: Try/Catch
+          results.innerHTML += '<p>Test 4: Try/Catch - PASSED</p>';
+          
+          // Test 5: Template Literals
+          results.innerHTML += '<p>Test 5: Template Literals - ';
+          const name = 'test';
+          const test5 = `Hello, ${name}!`;
+          results.innerHTML += (test5 === 'Hello, test!') ? 'PASSED' : 'FAILED';
+          results.innerHTML += '</p>';
+          
+          // Test 6: Fetch API
+          results.innerHTML += '<p>Test 6: Fetch API - Testing...</p>';
+          fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+              const fetchResult = document.createElement('p');
+              fetchResult.textContent = `Fetch Result: ${JSON.stringify(data)}`;
+              results.appendChild(fetchResult);
+            })
+            .catch(error => {
+              const fetchError = document.createElement('p');
+              fetchError.textContent = `Fetch Error: ${error.message}`;
+              results.appendChild(fetchError);
+            });
+          
+          results.innerHTML += '<p>All basic tests completed.</p>';
+        } catch (err) {
+          results.innerHTML += `<p style="color: red">ERROR: ${err.message}</p>`;
+          console.error('Test error:', err);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

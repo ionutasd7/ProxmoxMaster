@@ -412,6 +412,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
               </div>
             </div>
+            
+            <div class="row mt-3">
+              <div class="col-12">
+                <button type="button" id="test-connection-btn" class="btn btn-outline-info">
+                  <i class="fas fa-plug me-1"></i> Test Connection
+                </button>
+                <div id="connection-test-results" class="mt-2" style="display: none;">
+                  <div class="progress mb-2">
+                    <div id="connection-test-progress" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%"></div>
+                  </div>
+                  <div id="connection-test-message"></div>
+                </div>
+              </div>
+            </div>
           </form>
           
           <h6 class="mb-3 mt-4">Configured Nodes</h6>
@@ -496,6 +510,85 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add event listener for the add node form
     document.getElementById('add-node-form').addEventListener('submit', handleAddNode);
+    
+    // Add event listener for the test connection button
+    document.getElementById('test-connection-btn').addEventListener('click', handleTestConnection);
+  }
+  
+  // Handle test connection for a Proxmox node
+  async function handleTestConnection() {
+    // Get form values
+    const hostname = document.getElementById('node-hostname').value;
+    const port = document.getElementById('node-port').value;
+    const username = document.getElementById('api-username').value;
+    const password = document.getElementById('api-password').value;
+    
+    // Validate required fields
+    if (!hostname || !username || !password) {
+      showNotification('Please fill in hostname, username, and password to test connection', 'error');
+      return;
+    }
+    
+    // Show progress bar and status message
+    const resultsContainer = document.getElementById('connection-test-results');
+    const progressBar = document.getElementById('connection-test-progress');
+    const messageContainer = document.getElementById('connection-test-message');
+    
+    resultsContainer.style.display = 'block';
+    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
+    messageContainer.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin me-1"></i> Testing connection to ${hostname}:${port}...</span>`;
+    
+    try {
+      // Create connection test data
+      const connectionData = {
+        hostname,
+        port: parseInt(port, 10),
+        username,
+        password,
+        ssl_verify: false // For now hardcoded to false to avoid SSL issues
+      };
+      
+      // Make API call to test the connection
+      const response = await fetch('/api/nodes/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(connectionData)
+      });
+      
+      const result = await response.json();
+      console.log('Connection test result:', result);
+      
+      // Update progress bar and status message based on the result
+      if (result.success && result.connected) {
+        progressBar.className = 'progress-bar bg-success';
+        messageContainer.innerHTML = `
+          <div class="alert alert-success mb-0">
+            <strong><i class="fas fa-check-circle me-1"></i> Connection successful!</strong>
+            <div class="small mt-1">
+              Proxmox version: ${result.version || 'Unknown'} (${result.release || 'Unknown'})
+            </div>
+          </div>
+        `;
+      } else {
+        progressBar.className = 'progress-bar bg-danger';
+        messageContainer.innerHTML = `
+          <div class="alert alert-danger mb-0">
+            <strong><i class="fas fa-times-circle me-1"></i> Connection failed:</strong> ${result.message || 'Unknown error'}
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error('Error testing connection:', error);
+      
+      progressBar.className = 'progress-bar bg-danger';
+      messageContainer.innerHTML = `
+        <div class="alert alert-danger mb-0">
+          <strong><i class="fas fa-times-circle me-1"></i> Error:</strong> ${error.message || 'Could not complete the connection test'}
+        </div>
+      `;
+    }
   }
   
   // Handle adding a new Proxmox node
@@ -3971,7 +4064,7 @@ iface eth1 inet static
                       <th>Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody id="users-table-body">
                     <tr>
                       <td>admin</td>
                       <td><span class="badge bg-primary">Administrator</span></td>
@@ -3983,38 +4076,6 @@ iface eth1 inet static
                             <i class="fas fa-edit"></i>
                           </button>
                           <button class="btn btn-outline-danger" data-user-action="disable" data-username="admin" disabled>
-                            <i class="fas fa-ban"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>operator</td>
-                      <td><span class="badge bg-info">Operator</span></td>
-                      <td>2023-04-12 14:32</td>
-                      <td><span class="badge bg-success">Active</span></td>
-                      <td>
-                        <div class="btn-group btn-group-sm">
-                          <button class="btn btn-outline-warning" data-user-action="edit" data-username="operator">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-outline-danger" data-user-action="disable" data-username="operator">
-                            <i class="fas fa-ban"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>viewer</td>
-                      <td><span class="badge bg-secondary">Viewer</span></td>
-                      <td>2023-04-10 09:15</td>
-                      <td><span class="badge bg-success">Active</span></td>
-                      <td>
-                        <div class="btn-group btn-group-sm">
-                          <button class="btn btn-outline-warning" data-user-action="edit" data-username="viewer">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-outline-danger" data-user-action="disable" data-username="viewer">
                             <i class="fas fa-ban"></i>
                           </button>
                         </div>
@@ -4111,46 +4172,13 @@ iface eth1 inet static
                   <th>IP Address</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="activity-log-table">
                 <tr>
-                  <td>2023-04-13 10:15:23</td>
-                  <td>admin</td>
-                  <td>Login</td>
-                  <td>System</td>
-                  <td><span class="badge bg-success">Success</span></td>
-                  <td>192.168.1.100</td>
-                </tr>
-                <tr>
-                  <td>2023-04-13 10:16:05</td>
-                  <td>admin</td>
-                  <td>Create VM</td>
-                  <td>vm-test01 (ID: 103)</td>
-                  <td><span class="badge bg-success">Success</span></td>
-                  <td>192.168.1.100</td>
-                </tr>
-                <tr>
-                  <td>2023-04-13 10:20:45</td>
-                  <td>admin</td>
-                  <td>Start VM</td>
-                  <td>vm-test01 (ID: 103)</td>
-                  <td><span class="badge bg-success">Success</span></td>
-                  <td>192.168.1.100</td>
-                </tr>
-                <tr>
-                  <td>2023-04-12 14:32:10</td>
-                  <td>operator</td>
-                  <td>Login</td>
-                  <td>System</td>
-                  <td><span class="badge bg-success">Success</span></td>
-                  <td>192.168.1.101</td>
-                </tr>
-                <tr>
-                  <td>2023-04-12 14:35:22</td>
-                  <td>operator</td>
-                  <td>Create Container</td>
-                  <td>lxc-proxy01 (ID: 104)</td>
-                  <td><span class="badge bg-success">Success</span></td>
-                  <td>192.168.1.101</td>
+                  <td colspan="6" class="text-center">
+                    <div class="py-3">
+                      <i class="fas fa-history me-2"></i> Activity log will be available in future versions
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>

@@ -20,6 +20,15 @@ db.initializeDatabase().catch(err => {
 app.use(express.static(path.join(__dirname, '.')));
 app.use(express.json());
 
+// Status endpoint for debugging
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    serverTime: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Error handler middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
@@ -29,10 +38,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// API status endpoint
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'ok', message: 'Proxmox Manager API is running' });
-});
+// The API status endpoint is already defined above
 
 // Serve test.html for API testing
 app.get('/test', (req, res) => {
@@ -42,6 +48,26 @@ app.get('/test', (req, res) => {
 // Serve minimal.html for minimal testing
 app.get('/minimal', (req, res) => {
   res.sendFile(path.join(__dirname, 'minimal.html'));
+});
+
+// Serve debug.html for syntax error debugging
+app.get('/debug', (req, res) => {
+  res.sendFile(path.join(__dirname, 'debug.html'));
+});
+
+// Serve test-login.html for minimal login testing
+app.get('/test-login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-login.html'));
+});
+
+// Serve minimal-app.html for testing renderer functionality
+app.get('/minimal-app', (req, res) => {
+  res.sendFile(path.join(__dirname, 'minimal-app.html'));
+});
+
+// Serve the new version of the application
+app.get('/new', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index-new.html'));
 });
 
 // API Authentication endpoint - accepts any credentials for demo purposes
@@ -81,15 +107,156 @@ app.get('/api/nodes', async (req, res, next) => {
   }
 });
 
+// Test connection to a Proxmox node
+app.post('/api/nodes/test-connection', async (req, res, next) => {
+  try {
+    // Extract connection data from request body
+    const { hostname, port = 8006, username, password, ssl_verify = false } = req.body;
+    
+    // Validate required fields
+    if (!hostname || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required properties (hostname, username, password)'
+      });
+    }
+    
+    console.log(`Testing connection to Proxmox node at ${hostname}:${port} with username ${username}`);
+    
+    try {
+      const axios = require('axios');
+      const https = require('https');
+      const agent = new https.Agent({  
+        rejectUnauthorized: ssl_verify
+      });
+      
+      // Try to authenticate with Proxmox API
+      const authResponse = await axios.post(
+        `https://${hostname}:${port}/api2/json/access/ticket`,
+        `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          httpsAgent: agent,
+          timeout: 10000 // 10 second timeout
+        }
+      );
+      
+      if (authResponse.data && authResponse.data.data && authResponse.data.data.ticket) {
+        // Get version info for additional validation
+        const ticket = authResponse.data.data.ticket;
+        const versionResponse = await axios.get(
+          `https://${hostname}:${port}/api2/json/version`,
+          {
+            headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+            httpsAgent: agent,
+            timeout: 5000
+          }
+        );
+        
+        const versionInfo = versionResponse.data?.data || {};
+        
+        return res.json({
+          success: true,
+          message: 'Connection successful',
+          connected: true,
+          version: versionInfo.version || 'Unknown',
+          release: versionInfo.release || 'Unknown',
+          apiVersion: versionInfo.apiversion || 'Unknown'
+        });
+      } else {
+        return res.json({
+          success: false,
+          message: 'Authentication failed - invalid credentials',
+          connected: false
+        });
+      }
+    } catch (error) {
+      console.error('Connection test failed:', error.message);
+      
+      let errorMessage = 'Connection failed';
+      if (error.code === 'ECONNREFUSED') {
+        errorMessage = 'Connection refused - check hostname and port';
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+        errorMessage = 'Connection timed out - check hostname and port';
+      } else if (error.response) {
+        // Server responded with an error status
+        errorMessage = `Server error: ${error.response.status} ${error.response.statusText}`;
+        if (error.response.data && error.response.data.message) {
+          errorMessage += ` - ${error.response.data.message}`;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return res.json({
+        success: false,
+        message: errorMessage,
+        connected: false,
+        error: {
+          code: error.code || 'UNKNOWN_ERROR',
+          message: errorMessage
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error in test connection endpoint:', error);
+    next(error);
+  }
+});
+
 // Add node endpoint
 app.post('/api/nodes', async (req, res, next) => {
   try {
-    const node = await db.nodeDB.createNode(req.body);
+    // Extract node data from request body
+    const nodeData = req.body;
+    
+    // Validate required fields
+    if (!nodeData.hostname || !nodeData.username || !nodeData.password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required node properties (hostname, username, password)'
+      });
+    }
+    
+    // Test connection before adding to database
+    try {
+      const axios = require('axios');
+      const https = require('https');
+      const agent = new https.Agent({  
+        rejectUnauthorized: nodeData.ssl_verify || false
+      });
+      
+      // Try to authenticate with Proxmox API
+      const authResponse = await axios.post(
+        `https://${nodeData.hostname}:${nodeData.port || 8006}/api2/json/access/ticket`,
+        `username=${encodeURIComponent(nodeData.username)}&password=${encodeURIComponent(nodeData.password)}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          httpsAgent: agent,
+          timeout: 10000 // 10 second timeout
+        }
+      );
+      
+      if (authResponse.data && authResponse.data.data && authResponse.data.data.ticket) {
+        // Update node status to connected
+        nodeData.node_status = 'connected';
+      } else {
+        nodeData.node_status = 'auth_failed';
+      }
+    } catch (connError) {
+      console.error('Connection test failed during node addition:', connError.message);
+      nodeData.node_status = 'connection_failed';
+    }
+    
+    // Add node to database
+    const node = await db.nodeDB.createNode(nodeData);
+    
     res.status(201).json({
       success: true,
       node: node
     });
   } catch (error) {
+    console.error('Error adding node:', error);
     next(error);
   }
 });
@@ -431,28 +598,126 @@ app.get('/api/network', async (req, res, next) => {
   }
 });
 
-// Updates data endpoint
-app.get('/api/updates', (req, res) => {
-  res.json({
-    success: true,
-    updates: {
-      node: [
-        { package: 'pve-kernel-5.15', currentVersion: '5.15.102-1', newVersion: '5.15.107-1', priority: 'security', type: 'Kernel' },
-        { package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security', type: 'System' },
-        { package: 'qemu-server', currentVersion: '7.2.0-3', newVersion: '7.2.0-5', priority: 'important', type: 'System' }
-      ],
-      vms: [
-        { id: 101, name: 'web-server', status: 'running', package: 'linux-image-generic', currentVersion: '5.15.0-78', newVersion: '5.15.0-82', priority: 'security' },
-        { id: 101, name: 'web-server', status: 'running', package: 'openssl', currentVersion: '3.0.2-0ubuntu1.9', newVersion: '3.0.2-0ubuntu1.10', priority: 'security' },
-        { id: 102, name: 'db-server', status: 'running', package: 'mysql-server', currentVersion: '8.0.32-0ubuntu0.22.04.2', newVersion: '8.0.34-0ubuntu0.22.04.1', priority: 'important' }
-      ],
-      containers: [
-        { id: 201, name: 'nginx-proxy', status: 'running', package: 'nginx', currentVersion: '1.22.1-1~bookworm', newVersion: '1.24.0-2~bookworm', priority: 'important' },
-        { id: 201, name: 'nginx-proxy', status: 'running', package: 'openssl', currentVersion: '3.0.9-1', newVersion: '3.0.11-1', priority: 'security' },
-        { id: 202, name: 'redis-cache', status: 'running', package: 'redis-server', currentVersion: '6:7.0.11-1~deb12u1', newVersion: '6:7.0.15-1~deb12u1', priority: 'security' }
-      ]
+// Updates data endpoint - Get real updates from Proxmox
+app.get('/api/updates', async (req, res, next) => {
+  try {
+    const nodes = await db.nodeDB.getAllNodes();
+    const updates = {
+      node: [],
+      vms: [],
+      containers: []
+    };
+    
+    // For each node, try to get package updates
+    for (const node of nodes) {
+      try {
+        const axios = require('axios');
+        const https = require('https');
+        const agent = new https.Agent({  
+          rejectUnauthorized: false
+        });
+        
+        // Authenticate with Proxmox
+        const authResponse = await axios.post(
+          `https://${node.hostname}:${node.port}/api2/json/access/ticket`,
+          `username=${encodeURIComponent(node.username)}&password=${encodeURIComponent(node.password)}`,
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            httpsAgent: agent
+          }
+        );
+        
+        if (authResponse.data && authResponse.data.data) {
+          const { ticket, CSRFPreventionToken } = authResponse.data.data;
+          
+          // Get node names
+          const clusterResponse = await axios.get(
+            `https://${node.hostname}:${node.port}/api2/json/nodes`,
+            {
+              headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+              httpsAgent: agent
+            }
+          );
+          
+          if (clusterResponse.data && clusterResponse.data.data) {
+            // For each Proxmox node, get updates
+            for (const proxmoxNode of clusterResponse.data.data) {
+              const proxmoxNodeName = proxmoxNode.node;
+              
+              try {
+                // Get node updates - this is a simplified approach that would need to be replaced
+                // with the actual Proxmox API endpoint for updates if available
+                updates.node.push(
+                  { 
+                    node: proxmoxNodeName,
+                    package: 'system updates', 
+                    message: 'Please check Proxmox update interface for system updates'
+                  }
+                );
+                
+                // Get VM updates
+                const vmsResponse = await axios.get(
+                  `https://${node.hostname}:${node.port}/api2/json/nodes/${proxmoxNodeName}/qemu`,
+                  {
+                    headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+                    httpsAgent: agent
+                  }
+                );
+                
+                if (vmsResponse.data && vmsResponse.data.data) {
+                  // In a real implementation, you would query each VM for its updates
+                  // This would require SSH access to the VMs or additional APIs
+                  vmsResponse.data.data.forEach(vm => {
+                    updates.vms.push({
+                      id: vm.vmid,
+                      name: vm.name || `VM ${vm.vmid}`,
+                      status: vm.status,
+                      node: proxmoxNodeName,
+                      message: 'Update information requires OS-level access'
+                    });
+                  });
+                }
+                
+                // Get container updates
+                const containersResponse = await axios.get(
+                  `https://${node.hostname}:${node.port}/api2/json/nodes/${proxmoxNodeName}/lxc`,
+                  {
+                    headers: { 'Authorization': `PVEAuthCookie=${ticket}` },
+                    httpsAgent: agent
+                  }
+                );
+                
+                if (containersResponse.data && containersResponse.data.data) {
+                  // In a real implementation, would query each container for its updates
+                  containersResponse.data.data.forEach(container => {
+                    updates.containers.push({
+                      id: container.vmid,
+                      name: container.name || `Container ${container.vmid}`,
+                      status: container.status,
+                      node: proxmoxNodeName,
+                      message: 'Update information requires OS-level access'
+                    });
+                  });
+                }
+              } catch (nodeError) {
+                console.error(`Error getting updates from node ${proxmoxNodeName}:`, nodeError.message);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error connecting to node ${node.name} for updates:`, error.message);
+      }
     }
-  });
+    
+    res.json({
+      success: true,
+      updates
+    });
+  } catch (error) {
+    console.error('Error in /api/updates endpoint:', error);
+    next(error);
+  }
 });
 
 // Resource monitoring endpoint

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proxmox Manager - Minimal Login Test</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <style>
+    body {
+      background-color: #1a1a2e;
+      color: #e6e6e6;
+      font-family: 'Arial', sans-serif;
+    }
+    .login-container {
+      max-width: 400px;
+      margin: 80px auto;
+      background-color: #16213e;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      padding: 30px;
+      border: 1px solid #0f3460;
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .login-header h1 {
+      font-size: 24px;
+      color: #4cc9f0;
+    }
+    .form-control {
+      background-color: #1a1a2e;
+      border: 1px solid #0f3460;
+      color: #e6e6e6;
+      margin-bottom: 15px;
+    }
+    .form-control:focus {
+      background-color: #1a1a2e;
+      color: #e6e6e6;
+      border-color: #4cc9f0;
+      box-shadow: 0 0 0 0.25rem rgba(76, 201, 240, 0.25);
+    }
+    .btn-login {
+      background-color: #4cc9f0;
+      border: none;
+      width: 100%;
+      padding: 10px;
+      color: #16213e;
+      font-weight: bold;
+      border-radius: 4px;
+      margin-top: 15px;
+    }
+    .btn-login:hover {
+      background-color: #3db8de;
+    }
+    .error-message {
+      color: #ff5c8d;
+      margin-top: 15px;
+      text-align: center;
+      font-size: 14px;
+      display: none;
+    }
+    .status-message {
+      margin-top: 15px;
+      padding: 10px;
+      text-align: center;
+      display: none;
+      border-radius: 4px;
+    }
+    .status-success {
+      background-color: rgba(25, 135, 84, 0.2);
+      color: #29cc85;
+      border: 1px solid rgba(25, 135, 84, 0.3);
+    }
+    .status-error {
+      background-color: rgba(220, 53, 69, 0.2);
+      color: #ff6b81;
+      border: 1px solid rgba(220, 53, 69, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="login-container">
+      <div class="login-header">
+        <h1><i class="fas fa-server me-2"></i>Proxmox Manager</h1>
+        <p class="text-white-50">Minimal Login Test</p>
+      </div>
+      
+      <div id="status-message" class="status-message"></div>
+      
+      <form id="login-form">
+        <div class="mb-3">
+          <label for="username" class="form-label">Username</label>
+          <input type="text" class="form-control" id="username" placeholder="Enter username" autocomplete="username" required>
+        </div>
+        
+        <div class="mb-3">
+          <label for="password" class="form-label">Password</label>
+          <input type="password" class="form-control" id="password" placeholder="Enter password" autocomplete="current-password" required>
+        </div>
+        
+        <div class="d-grid">
+          <button type="submit" class="btn btn-login">
+            <span id="login-text">Login</span>
+            <span id="loading-indicator" style="display: none;">
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              Logging in...
+            </span>
+          </button>
+        </div>
+        
+        <div id="error-message" class="error-message"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Elements
+      const loginForm = document.getElementById('login-form');
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+      const errorMessage = document.getElementById('error-message');
+      const statusMessage = document.getElementById('status-message');
+      const loginText = document.getElementById('login-text');
+      const loadingIndicator = document.getElementById('loading-indicator');
+      
+      // Show status message with type (success or error)
+      function showStatus(message, type = 'success') {
+        statusMessage.textContent = message;
+        statusMessage.style.display = 'block';
+        
+        if (type === 'success') {
+          statusMessage.className = 'status-message status-success';
+        } else {
+          statusMessage.className = 'status-message status-error';
+        }
+        
+        // Hide after 5 seconds
+        setTimeout(() => {
+          statusMessage.style.display = 'none';
+        }, 5000);
+      }
+      
+      // Show error message
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+      }
+      
+      // Hide error message
+      function hideError() {
+        errorMessage.style.display = 'none';
+      }
+      
+      // Show loading state
+      function showLoading() {
+        loginText.style.display = 'none';
+        loadingIndicator.style.display = 'inline-block';
+      }
+      
+      // Hide loading state
+      function hideLoading() {
+        loginText.style.display = 'inline-block';
+        loadingIndicator.style.display = 'none';
+      }
+      
+      // Handle login form submission
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideError();
+        
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value.trim();
+        
+        // Simple validation
+        if (!username || !password) {
+          showError('Please enter both username and password');
+          return;
+        }
+        
+        try {
+          showLoading();
+          
+          // Simulate login process
+          const hardcodedUsername = 'admin';
+          const hardcodedPassword = 'admin';
+          
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
+          
+          if (username === hardcodedUsername && password === hardcodedPassword) {
+            showStatus('Login successful! Redirecting...', 'success');
+            
+            // Simulate redirect delay
+            setTimeout(() => {
+              document.body.innerHTML = `
+                <div class="container text-center py-5">
+                  <h1 class="text-success mb-4"><i class="fas fa-check-circle"></i> Login Successful</h1>
+                  <p class="lead">The minimal login test was successful.</p>
+                  <p>This demonstrates that basic JavaScript functionality is working correctly.</p>
+                  <div class="mt-4">
+                    <a href="/" class="btn btn-outline-light">Return to Main Application</a>
+                  </div>
+                </div>
+              `;
+            }, 1500);
+          } else {
+            hideLoading();
+            showError('Invalid username or password');
+          }
+        } catch (error) {
+          hideLoading();
+          showError('An error occurred during login: ' + error.message);
+          console.error('Login error:', error);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

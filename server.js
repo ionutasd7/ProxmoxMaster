@@ -862,7 +862,7 @@ app.get('/api/nodes/:id', async (req, res) => {
   try {
     // Get node details from database
     const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password, status, created_at FROM nodes WHERE id = $1',
+      'SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes WHERE id = $1',
       [req.params.id]
     );
     
@@ -887,7 +887,7 @@ app.get('/api/nodes/:id', async (req, res) => {
       ssh_password: dbNode.password,
       use_ssl: true,
       verify_ssl: false,
-      status: dbNode.status || 'online'
+      status: dbNode.node_status || 'online'
     };
     
     // Connect to Proxmox API to get real-time data

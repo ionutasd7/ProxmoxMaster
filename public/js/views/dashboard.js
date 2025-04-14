@@ -700,41 +700,37 @@ export class DashboardView {
     }
     
     return nodes.map(node => `
-      <div class="col-md-6 col-xl-4 mb-4">
+      <div class="col-md-6 col-xl-3 mb-4">
         <div class="node-status-card">
           <div class="node-title">
-            <div class="status-indicator ${node.status?.toLowerCase() === 'online' ? 'status-online' : 'status-offline'}"></div>
-            <span>${node.name}</span>
-            <a href="#" class="ms-auto node-details-btn text-primary" data-id="${node.id}" title="View details">
-              <i class="fas fa-external-link-alt"></i>
-            </a>
+            <div class="d-flex align-items-center w-100">
+              <div class="status-indicator ${(node.status || node.node_status || '').toLowerCase() === 'online' ? 'status-online' : 'status-offline'}"></div>
+              <span class="fs-5 fw-semibold">${node.name}</span>
+              <a href="#" class="ms-auto node-details-btn text-primary" data-id="${node.id}" title="View details">
+                <i class="fas fa-external-link-alt"></i>
+              </a>
+            </div>
+            <div class="text-muted mt-1" style="font-size: 0.75rem;">${node.api_host || node.hostname}:${node.api_port || node.port || 8006}</div>
           </div>
           
-          <div class="d-flex align-items-center mt-2 mb-3">
+          <div class="mt-2 mb-3">
+            <div class="status-badge status-${(node.status || node.node_status || 'unknown').toLowerCase()}">${node.status || node.node_status || 'Unknown'}</div>
+          </div>
+          
+          <hr class="my-2" style="border-color: rgba(255,255,255,0.1);">
+          
+          <div class="d-flex justify-content-between text-center mt-3">
             <div>
-              <div class="text-muted" style="font-size: 0.8rem;">${node.api_host || node.hostname}:${node.api_port || node.port || 8006}</div>
-              <div>${this.app.ui.getStatusBadge(node.status || 'Unknown')}</div>
-            </div>
-          </div>
-          
-          <div class="node-details">
-            ${this.app.ui.createResourceMeter(node.cpu_usage || 0, 'CPU', `${node.cpu_usage || 0}%`)}
-            ${this.app.ui.createResourceMeter(node.memory_usage || 0, 'Memory', `${node.memory_usage || 0}%`)}
-            ${this.app.ui.createResourceMeter(node.disk_usage || 0, 'Storage', `${node.disk_usage || 0}%`)}
-          </div>
-          
-          <div class="d-flex flex-wrap mt-3">
-            <div class="me-3 mb-2">
               <div class="text-muted small">VMs</div>
-              <div class="fw-semibold">${node.vms_count || 0}</div>
+              <div class="fs-5 fw-semibold">${node.vms_count || 0}</div>
             </div>
-            <div class="me-3 mb-2">
+            <div>
               <div class="text-muted small">Containers</div>
-              <div class="fw-semibold">${node.container_count || 0}</div>
+              <div class="fs-5 fw-semibold">${node.containers_count || node.container_count || 0}</div>
             </div>
-            <div class="me-3 mb-2">
+            <div>
               <div class="text-muted small">Uptime</div>
-              <div class="fw-semibold">${this.formatUptime(node.uptime || 0)}</div>
+              <div class="fs-5 fw-semibold">${node.uptime ? this.formatUptime(node.uptime) : 'N/A'}</div>
             </div>
           </div>
         </div>

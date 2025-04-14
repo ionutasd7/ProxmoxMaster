@@ -1,53 +1,34 @@
 /**
  * UI Helper
- * Common UI functions and components
+ * Manages UI components and provides helper methods
  */
 export class UI {
   constructor(app) {
     this.app = app;
-    this.toastContainer = null;
-    this.loadingOverlay = null;
     
-    this.initToastContainer();
-    this.initLoadingOverlay();
-  }
-  
-  /**
-   * Initialize toast container
-   */
-  initToastContainer() {
-    // Create toast container if it doesn't exist
-    if (!document.getElementById('toast-container')) {
-      const toastContainer = document.createElement('div');
-      toastContainer.id = 'toast-container';
-      toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-      document.body.appendChild(toastContainer);
-      this.toastContainer = toastContainer;
-    } else {
-      this.toastContainer = document.getElementById('toast-container');
-    }
-  }
-  
-  /**
-   * Initialize loading overlay
-   */
-  initLoadingOverlay() {
-    // Create loading overlay if it doesn't exist
-    if (!document.getElementById('loading-overlay')) {
-      const loadingOverlay = document.createElement('div');
-      loadingOverlay.id = 'loading-overlay';
-      loadingOverlay.className = 'loading-overlay';
-      loadingOverlay.innerHTML = `
-        <div class="loading-spinner">
-          <div class="spinner-border text-light" role="status"></div>
-          <p class="mt-2 text-light" id="loading-message">Loading...</p>
+    // Create loading overlay
+    this.loadingOverlay = document.createElement('div');
+    this.loadingOverlay.className = 'loading-overlay hidden';
+    this.loadingOverlay.innerHTML = `
+      <div class="loading-spinner">
+        <div class="spinner-border text-light" role="status">
+          <span class="visually-hidden">Loading...</span>
         </div>
-      `;
-      document.body.appendChild(loadingOverlay);
-      this.loadingOverlay = loadingOverlay;
-    } else {
-      this.loadingOverlay = document.getElementById('loading-overlay');
-    }
+        <p class="loading-message mt-3 text-light">Loading...</p>
+      </div>
+    `;
+    
+    // Create toast container
+    this.toastContainer = document.createElement('div');
+    this.toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+    this.toastContainer.setAttribute('aria-live', 'polite');
+    this.toastContainer.setAttribute('aria-atomic', 'true');
+    
+    // Add elements to body when DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.appendChild(this.loadingOverlay);
+      document.body.appendChild(this.toastContainer);
+    });
   }
   
   /**
@@ -55,109 +36,129 @@ export class UI {
    * @param {string} message - Loading message
    */
   showLoading(message = 'Loading...') {
-    const loadingMessage = document.getElementById('loading-message');
-    if (loadingMessage) {
-      loadingMessage.textContent = message;
+    const messageEl = this.loadingOverlay.querySelector('.loading-message');
+    if (messageEl) {
+      messageEl.textContent = message;
     }
     
-    if (this.loadingOverlay) {
-      this.loadingOverlay.classList.add('show');
-    }
+    this.loadingOverlay.classList.remove('hidden');
   }
   
   /**
    * Hide loading overlay
    */
   hideLoading() {
-    if (this.loadingOverlay) {
-      this.loadingOverlay.classList.remove('show');
-    }
+    this.loadingOverlay.classList.add('hidden');
   }
   
   /**
    * Show a toast notification
    * @param {string} message - Notification message
-   * @param {string} type - Notification type (success, danger, warning, info)
+   * @param {string} type - Notification type (success, error, warning, info)
    * @param {number} duration - Duration in milliseconds
+   * @returns {HTMLElement} Toast element
    */
-  showToast(message, type = 'primary', duration = 3000) {
-    const id = 'toast-' + Date.now();
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
+  showToast(message, type = 'info', duration = 3000) {
+    // Create a unique ID for the toast
+    const toastId = `toast-${Date.now()}`;
     
+    // Get background and icon based on type
+    let bgClass = 'bg-primary';
     let icon = 'info-circle';
+    
     switch (type) {
       case 'success':
+        bgClass = 'bg-success';
         icon = 'check-circle';
         break;
-      case 'danger':
+      case 'error':
+        bgClass = 'bg-danger';
         icon = 'exclamation-circle';
         break;
       case 'warning':
+        bgClass = 'bg-warning';
         icon = 'exclamation-triangle';
+        break;
+      case 'info':
+      default:
+        bgClass = 'bg-primary';
+        icon = 'info-circle';
         break;
     }
     
-    toast.innerHTML = `
-      <div class="toast-header">
-        <i class="fas fa-${icon} me-2 text-${type}"></i>
-        <strong class="me-auto">Proxmox Manager</strong>
-        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    // Create toast element
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast ${bgClass} text-white`;
+    toastEl.id = toastId;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('aria-live', 'assertive');
+    toastEl.setAttribute('aria-atomic', 'true');
+    
+    toastEl.innerHTML = `
+      <div class="toast-header ${bgClass} text-white">
+        <i class="fas fa-${icon} me-2"></i>
+        <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
       </div>
       <div class="toast-body">
         ${message}
       </div>
     `;
     
-    this.toastContainer.appendChild(toast);
+    // Add toast to container
+    this.toastContainer.appendChild(toastEl);
     
-    const bsToast = new bootstrap.Toast(toast, {
+    // Initialize Bootstrap toast
+    const toast = new bootstrap.Toast(toastEl, {
       autohide: true,
       delay: duration
     });
     
-    bsToast.show();
+    // Show toast
+    toast.show();
     
-    // Remove toast after it's hidden
-    toast.addEventListener('hidden.bs.toast', () => {
-      toast.remove();
+    // Remove toast from DOM after it's hidden
+    toastEl.addEventListener('hidden.bs.toast', () => {
+      toastEl.remove();
     });
+    
+    return toastEl;
   }
   
   /**
-   * Show a success toast notification
-   * @param {string} message - Notification message
+   * Show success toast
+   * @param {string} message - Success message
+   * @returns {HTMLElement} Toast element
    */
   showSuccess(message) {
-    this.showToast(message, 'success');
+    return this.showToast(message, 'success');
   }
   
   /**
-   * Show an error toast notification
-   * @param {string} message - Notification message
+   * Show error toast
+   * @param {string} message - Error message
+   * @returns {HTMLElement} Toast element
    */
   showError(message) {
-    this.showToast(message, 'danger');
+    return this.showToast(message, 'error');
   }
   
   /**
-   * Show a warning toast notification
-   * @param {string} message - Notification message
+   * Show warning toast
+   * @param {string} message - Warning message
+   * @returns {HTMLElement} Toast element
    */
   showWarning(message) {
-    this.showToast(message, 'warning');
+    return this.showToast(message, 'warning');
   }
   
   /**
-   * Show an info toast notification
-   * @param {string} message - Notification message
+   * Show info toast
+   * @param {string} message - Info message
+   * @returns {HTMLElement} Toast element
    */
   showInfo(message) {
-    this.showToast(message, 'info');
+    return this.showToast(message, 'info');
   }
   
   /**
@@ -166,21 +167,20 @@ export class UI {
    * @param {string} message - Dialog message
    * @param {string} confirmText - Confirm button text
    * @param {string} cancelText - Cancel button text
-   * @returns {Promise<boolean>} Whether confirmed
+   * @param {string} confirmButtonClass - Confirm button class
+   * @returns {Promise<boolean>} Result of the confirmation
    */
-  confirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel') {
+  confirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel', confirmButtonClass = 'btn-primary') {
     return new Promise((resolve) => {
-      const id = 'confirm-modal-' + Date.now();
-      
       // Create modal element
-      const modal = document.createElement('div');
-      modal.className = 'modal fade';
-      modal.id = id;
-      modal.setAttribute('tabindex', '-1');
-      modal.setAttribute('aria-hidden', 'true');
+      const modalEl = document.createElement('div');
+      modalEl.className = 'modal fade';
+      modalEl.id = `confirm-modal-${Date.now()}`;
+      modalEl.setAttribute('tabindex', '-1');
+      modalEl.setAttribute('aria-hidden', 'true');
       
-      modal.innerHTML = `
-        <div class="modal-dialog">
+      modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">${title}</h5>
@@ -190,58 +190,121 @@ export class UI {
               <p>${message}</p>
             </div>
             <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
-              <button type="button" class="btn btn-primary" id="${id}-confirm">${confirmText}</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancel-btn">${cancelText}</button>
+              <button type="button" class="btn ${confirmButtonClass}" id="confirm-btn">${confirmText}</button>
             </div>
           </div>
         </div>
       `;
       
-      // Add modal to document
-      document.body.appendChild(modal);
+      // Add modal to body
+      document.body.appendChild(modalEl);
       
       // Initialize Bootstrap modal
-      const bsModal = new bootstrap.Modal(modal);
+      const modal = new bootstrap.Modal(modalEl);
       
       // Add event listeners
-      const confirmButton = document.getElementById(`${id}-confirm`);
-      confirmButton.addEventListener('click', () => {
-        bsModal.hide();
+      const confirmBtn = modalEl.querySelector('#confirm-btn');
+      const cancelBtn = modalEl.querySelector('#cancel-btn');
+      
+      confirmBtn.addEventListener('click', () => {
+        modal.hide();
         resolve(true);
       });
       
-      modal.addEventListener('hidden.bs.modal', () => {
-        modal.remove();
+      cancelBtn.addEventListener('click', () => {
+        modal.hide();
         resolve(false);
       });
       
+      // Handle modal hidden event
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalEl.remove();
+      });
+      
       // Show modal
-      bsModal.show();
+      modal.show();
     });
   }
   
   /**
-   * Show a prompt dialog
+   * Show an alert dialog
+   * @param {string} title - Dialog title
+   * @param {string} message - Dialog message
+   * @param {string} buttonText - Button text
+   * @returns {Promise<void>} Promise that resolves when the dialog is closed
+   */
+  alert(title, message, buttonText = 'OK') {
+    return new Promise((resolve) => {
+      // Create modal element
+      const modalEl = document.createElement('div');
+      modalEl.className = 'modal fade';
+      modalEl.id = `alert-modal-${Date.now()}`;
+      modalEl.setAttribute('tabindex', '-1');
+      modalEl.setAttribute('aria-hidden', 'true');
+      
+      modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">${title}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p>${message}</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="ok-btn">${buttonText}</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Add modal to body
+      document.body.appendChild(modalEl);
+      
+      // Initialize Bootstrap modal
+      const modal = new bootstrap.Modal(modalEl);
+      
+      // Add event listener
+      const okBtn = modalEl.querySelector('#ok-btn');
+      
+      okBtn.addEventListener('click', () => {
+        modal.hide();
+        resolve();
+      });
+      
+      // Handle modal hidden event
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalEl.remove();
+        resolve();
+      });
+      
+      // Show modal
+      modal.show();
+    });
+  }
+  
+  /**
+   * Create a prompt dialog
    * @param {string} title - Dialog title
    * @param {string} message - Dialog message
    * @param {string} defaultValue - Default input value
    * @param {string} confirmText - Confirm button text
    * @param {string} cancelText - Cancel button text
-   * @returns {Promise<string|null>} User input or null if cancelled
+   * @returns {Promise<string|null>} Result of the prompt (string or null if canceled)
    */
-  prompt(title, message, defaultValue = '', confirmText = 'Confirm', cancelText = 'Cancel') {
+  prompt(title, message, defaultValue = '', confirmText = 'OK', cancelText = 'Cancel') {
     return new Promise((resolve) => {
-      const id = 'prompt-modal-' + Date.now();
-      
       // Create modal element
-      const modal = document.createElement('div');
-      modal.className = 'modal fade';
-      modal.id = id;
-      modal.setAttribute('tabindex', '-1');
-      modal.setAttribute('aria-hidden', 'true');
+      const modalEl = document.createElement('div');
+      modalEl.className = 'modal fade';
+      modalEl.id = `prompt-modal-${Date.now()}`;
+      modalEl.setAttribute('tabindex', '-1');
+      modalEl.setAttribute('aria-hidden', 'true');
       
-      modal.innerHTML = `
-        <div class="modal-dialog">
+      modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">${title}</h5>
@@ -249,71 +312,57 @@ export class UI {
             </div>
             <div class="modal-body">
               <p>${message}</p>
-              <input type="text" class="form-control" id="${id}-input" value="${defaultValue}">
+              <input type="text" class="form-control" id="prompt-input" value="${defaultValue}">
             </div>
             <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
-              <button type="button" class="btn btn-primary" id="${id}-confirm">${confirmText}</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancel-btn">${cancelText}</button>
+              <button type="button" class="btn btn-primary" id="confirm-btn">${confirmText}</button>
             </div>
           </div>
         </div>
       `;
       
-      // Add modal to document
-      document.body.appendChild(modal);
+      // Add modal to body
+      document.body.appendChild(modalEl);
       
       // Initialize Bootstrap modal
-      const bsModal = new bootstrap.Modal(modal);
+      const modal = new bootstrap.Modal(modalEl);
       
       // Add event listeners
-      const confirmButton = document.getElementById(`${id}-confirm`);
-      const input = document.getElementById(`${id}-input`);
+      const confirmBtn = modalEl.querySelector('#confirm-btn');
+      const cancelBtn = modalEl.querySelector('#cancel-btn');
+      const input = modalEl.querySelector('#prompt-input');
       
-      confirmButton.addEventListener('click', () => {
-        bsModal.hide();
+      confirmBtn.addEventListener('click', () => {
+        modal.hide();
         resolve(input.value);
       });
       
-      modal.addEventListener('hidden.bs.modal', () => {
-        modal.remove();
+      cancelBtn.addEventListener('click', () => {
+        modal.hide();
         resolve(null);
       });
       
-      // Show modal
-      bsModal.show();
+      // Handle modal shown event
+      modalEl.addEventListener('shown.bs.modal', () => {
+        input.focus();
+        input.select();
+      });
       
-      // Focus input
-      input.focus();
+      // Handle modal hidden event
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalEl.remove();
+      });
+      
+      // Handle enter key press
+      input.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+          confirmBtn.click();
+        }
+      });
+      
+      // Show modal
+      modal.show();
     });
-  }
-  
-  /**
-   * Get status badge
-   * @param {string} status - Status
-   * @returns {string} HTML
-   */
-  getStatusBadge(status) {
-    let badgeClass = 'badge text-bg-secondary';
-    let icon = 'question-circle';
-    
-    switch (status) {
-      case 'online':
-      case 'running':
-        badgeClass = 'badge text-bg-success';
-        icon = 'check-circle';
-        break;
-      case 'offline':
-      case 'stopped':
-        badgeClass = 'badge text-bg-danger';
-        icon = 'stop-circle';
-        break;
-      case 'warning':
-      case 'paused':
-        badgeClass = 'badge text-bg-warning';
-        icon = 'exclamation-triangle';
-        break;
-    }
-    
-    return `<span class="${badgeClass}"><i class="fas fa-${icon} me-1"></i> ${status}</span>`;
   }
 }

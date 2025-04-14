@@ -5,7 +5,7 @@
 export class API {
   constructor() {
     this.baseUrl = '/api';
-    this.token = localStorage.getItem('token');
+    this.token = null;
   }
   
   /**
@@ -14,7 +14,6 @@ export class API {
    */
   setToken(token) {
     this.token = token;
-    localStorage.setItem('token', token);
   }
   
   /**
@@ -22,7 +21,6 @@ export class API {
    */
   clearToken() {
     this.token = null;
-    localStorage.removeItem('token');
   }
   
   /**
@@ -53,39 +51,33 @@ export class API {
    * @returns {Promise<Object>} Response data
    */
   async request(method, endpoint, data = null, includeContentType = true) {
-    const url = `${this.baseUrl}${endpoint}`;
-    
-    console.log(`API Request: ${method} ${endpoint}`);
-    
-    const options = {
-      method,
-      headers: this.getHeaders(includeContentType),
-      credentials: 'same-origin'
-    };
-    
-    if (data) {
-      options.body = JSON.stringify(data);
-    }
-    
     try {
-      const response = await fetch(url, options);
-      const responseData = await response.json();
+      const url = `${this.baseUrl}${endpoint}`;
+      const options = {
+        method,
+        headers: this.getHeaders(includeContentType),
+        credentials: 'same-origin'
+      };
       
-      console.log(`API Response from ${endpoint}:`, responseData);
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Clear token if unauthorized
-          this.clearToken();
+      if (data) {
+        if (includeContentType) {
+          options.body = JSON.stringify(data);
+        } else {
+          options.body = data;
         }
-        
-        throw {
-          status: response.status,
-          data: responseData,
-          message: responseData.message || responseData.error || 'API request failed'
-        };
       }
       
+      console.log(`API Request: ${method} ${endpoint}`);
+      
+      const response = await fetch(url, options);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      console.log(`API Response from ${endpoint}:`, responseData);
       return responseData;
     } catch (error) {
       console.error(`API Error (${endpoint}):`, error);
@@ -146,13 +138,7 @@ export class API {
    * @returns {Promise<Object>} Login response
    */
   async login(username, password) {
-    const response = await this.post('/login', { username, password });
-    
-    if (response.token) {
-      this.setToken(response.token);
-    }
-    
-    return response;
+    return this.post('/login', { username, password });
   }
   
   /**
@@ -160,13 +146,7 @@ export class API {
    * @returns {Promise<Object>} Logout response
    */
   async logout() {
-    try {
-      await this.post('/logout');
-    } finally {
-      this.clearToken();
-    }
-    
-    return { success: true };
+    return this.post('/logout');
   }
   
   /**
@@ -213,6 +193,15 @@ export class API {
   }
   
   /**
+   * Test connection using API token
+   * @param {Object} connectionDetails - Connection details with token
+   * @returns {Promise<Object>} Connection test result
+   */
+  async testDirectConnection(connectionDetails) {
+    return this.post('/test-direct-connection', connectionDetails);
+  }
+  
+  /**
    * Delete a node
    * @param {string} nodeId - Node ID
    * @returns {Promise<Object>} Delete response
@@ -236,7 +225,7 @@ export class API {
    * @returns {Promise<Object>} VM details
    */
   async getVMDetails(nodeId, vmId) {
-    return this.get(`/nodes/${nodeId}/vms/${vmId}`);
+    return this.get(`/nodes/${nodeId}/qemu/${vmId}`);
   }
   
   /**
@@ -247,7 +236,7 @@ export class API {
    * @returns {Promise<Object>} Action response
    */
   async performVMAction(nodeId, vmId, action) {
-    return this.post(`/nodes/${nodeId}/vms/${vmId}/${action}`);
+    return this.post(`/nodes/${nodeId}/qemu/${vmId}/${action}`, {});
   }
   
   /**
@@ -266,7 +255,7 @@ export class API {
    * @returns {Promise<Object>} Action response
    */
   async performContainerAction(nodeId, containerId, action) {
-    return this.post(`/nodes/${nodeId}/containers/${containerId}/${action}`);
+    return this.post(`/nodes/${nodeId}/lxc/${containerId}/${action}`, {});
   }
   
   /**

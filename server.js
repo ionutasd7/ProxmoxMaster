@@ -486,6 +486,16 @@ app.get('/api/dashboard', async (req, res) => {
       clusterStats.cpuUsage = clusterStats.cpuUsage / clusterStats.onlineNodes;
     }
     
+    // Debug output before sending to client
+    console.log('Dashboard API response stats:', {
+      totalNodes: clusterStats.totalNodes,
+      onlineNodes: clusterStats.onlineNodes,
+      offlineNodes: clusterStats.offlineNodes,
+      nodeCount: nodeDetails.length,
+      totalCPUs: clusterStats.totalCPUs,
+      totalMemory: clusterStats.totalMemory
+    });
+    
     res.json({
       success: true,
       cluster: {

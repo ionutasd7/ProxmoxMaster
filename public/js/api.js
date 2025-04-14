@@ -216,6 +216,14 @@ export class API {
   }
   
   /**
+   * Get dashboard data including cluster stats
+   * @returns {Promise<Object>} Dashboard data
+   */
+  async getDashboardData() {
+    return this.request('/api/dashboard');
+  }
+  
+  /**
    * Get all VMs across all nodes
    * @returns {Promise<Object>} VMs data
    */

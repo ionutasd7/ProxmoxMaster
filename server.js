@@ -245,6 +245,256 @@ app.post('/api/logout', (req, res) => {
 });
 
 // Global VMs and containers endpoints (used for dashboard data)
+// Dashboard endpoint for aggregated cluster data
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    // Get all nodes from database
+    const nodesResult = await pool.query(
+      'SELECT id, name, hostname, port, username, password, node_status FROM nodes'
+    );
+    
+    if (nodesResult.rowCount === 0) {
+      return res.json({
+        success: true,
+        cluster: {
+          nodes: [],
+          stats: {
+            totalNodes: 0,
+            onlineNodes: 0,
+            warningNodes: 0,
+            offlineNodes: 0,
+            totalVMs: 0,
+            runningVMs: 0,
+            totalContainers: 0,
+            runningContainers: 0,
+            totalCPUs: 0,
+            cpuUsage: 0,
+            totalMemory: 0,
+            usedMemory: 0,
+            totalStorage: 0,
+            usedStorage: 0
+          },
+          networkUsage: {
+            inbound: 0,
+            outbound: 0
+          }
+        }
+      });
+    }
+    
+    const nodes = nodesResult.rows;
+    const clusterStats = {
+      totalNodes: nodes.length,
+      onlineNodes: 0,
+      warningNodes: 0,
+      offlineNodes: nodes.length, // Default all to offline until proven otherwise
+      totalVMs: 0,
+      runningVMs: 0,
+      totalContainers: 0,
+      runningContainers: 0,
+      totalCPUs: 0,
+      cpuUsage: 0,
+      totalMemory: 0,
+      usedMemory: 0,
+      totalStorage: 0,
+      usedStorage: 0
+    };
+    
+    const networkUsage = {
+      inbound: 0,
+      outbound: 0
+    };
+    
+    const nodeDetails = [];
+    
+    // For each node, get status and resources
+    for (const dbNode of nodes) {
+      try {
+        // Map to expected format for API calls
+        const node = {
+          id: dbNode.id,
+          name: dbNode.name,
+          api_host: dbNode.hostname,
+          api_port: dbNode.port || 8006,
+          api_username: dbNode.username,
+          api_password: dbNode.password,
+          api_realm: 'pam',
+          use_ssl: true,
+          verify_ssl: false,
+          status: dbNode.node_status || 'unknown'
+        };
+    
+        const protocol = node.use_ssl ? 'https' : 'http';
+        
+        // Create API client
+        const axiosInstance = axios.create({
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: node.verify_ssl
+          }),
+          timeout: 8000 // 8 second timeout
+        });
+        
+        // Try to get auth ticket
+        try {
+          const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
+          
+          // Get node status
+          const statusResponse = await axiosInstance.get(
+            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
+            { 
+              headers: {
+                'Cookie': `PVEAuthCookie=${ticket}`
+              }
+            }
+          );
+          
+          const statusData = statusResponse.data.data || {};
+          
+          // Update node status to online
+          node.status = 'online';
+          clusterStats.onlineNodes++;
+          clusterStats.offlineNodes--;
+          
+          // Add CPU, memory, and storage data
+          const cpuInfo = statusData.cpuinfo || {};
+          const memory = statusData.memory || {};
+          const rootfs = statusData.rootfs || {};
+          
+          // Add to cluster totals
+          clusterStats.totalCPUs += cpuInfo.cpus || 0;
+          clusterStats.cpuUsage += statusData.cpu || 0; // Will average later
+          clusterStats.totalMemory += memory.total || 0;
+          clusterStats.usedMemory += memory.used || 0;
+          clusterStats.totalStorage += rootfs.total || 0;
+          clusterStats.usedStorage += rootfs.used || 0;
+          
+          // Get network data
+          const networkResponse = await axiosInstance.get(
+            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata?ds=netin&ds=netout&timeframe=hour`,
+            { 
+              headers: {
+                'Cookie': `PVEAuthCookie=${ticket}`
+              }
+            }
+          );
+          
+          const networkData = networkResponse.data.data || [];
+          if (networkData.length > 0) {
+            // Get the most recent network data point
+            const latestNetData = networkData[networkData.length - 1];
+            networkUsage.inbound += latestNetData.netin || 0;
+            networkUsage.outbound += latestNetData.netout || 0;
+          }
+          
+          // Get VMs
+          const vmsResponse = await axiosInstance.get(
+            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu`,
+            { 
+              headers: {
+                'Cookie': `PVEAuthCookie=${ticket}`
+              }
+            }
+          );
+          
+          const vms = vmsResponse.data.data || [];
+          clusterStats.totalVMs += vms.length;
+          clusterStats.runningVMs += vms.filter(vm => vm.status === 'running').length;
+          
+          // Get containers
+          const containersResponse = await axiosInstance.get(
+            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc`,
+            { 
+              headers: {
+                'Cookie': `PVEAuthCookie=${ticket}`
+              }
+            }
+          );
+          
+          const containers = containersResponse.data.data || [];
+          clusterStats.totalContainers += containers.length;
+          clusterStats.runningContainers += containers.filter(ct => ct.status === 'running').length;
+          
+          // Add node details
+          nodeDetails.push({
+            id: node.id,
+            name: node.name,
+            hostname: node.api_host,
+            port: node.api_port,
+            status: node.status,
+            cpus: cpuInfo.cpus || 0,
+            cpu_usage: statusData.cpu || 0,
+            memory_total: memory.total || 0,
+            memory_used: memory.used || 0,
+            storage_total: rootfs.total || 0,
+            storage_used: rootfs.used || 0,
+            vms: vms.length,
+            running_vms: vms.filter(vm => vm.status === 'running').length,
+            containers: containers.length,
+            running_containers: containers.filter(ct => ct.status === 'running').length
+          });
+          
+          // Update node status in the database
+          await pool.query(
+            'UPDATE nodes SET node_status = $1 WHERE id = $2',
+            ['online', node.id]
+          );
+          
+        } catch (authError) {
+          console.error(`Authentication or API error for node ${node.name}:`, authError.message);
+          
+          // Add node with error status
+          nodeDetails.push({
+            id: node.id,
+            name: node.name,
+            hostname: node.api_host,
+            port: node.api_port,
+            status: 'offline',
+            error: authError.message
+          });
+          
+          // Update node status in the database
+          await pool.query(
+            'UPDATE nodes SET node_status = $1 WHERE id = $2',
+            ['offline', node.id]
+          );
+        }
+      } catch (nodeError) {
+        console.error(`Error processing node ${dbNode.name}:`, nodeError.message);
+        
+        // Add node with error status
+        nodeDetails.push({
+          id: dbNode.id,
+          name: dbNode.name,
+          hostname: dbNode.hostname,
+          port: dbNode.port || 8006,
+          status: 'unknown',
+          error: nodeError.message
+        });
+      }
+    }
+    
+    // Average CPU usage across all online nodes
+    if (clusterStats.onlineNodes > 0) {
+      clusterStats.cpuUsage = clusterStats.cpuUsage / clusterStats.onlineNodes;
+    }
+    
+    res.json({
+      success: true,
+      cluster: {
+        nodes: nodeDetails,
+        stats: clusterStats,
+        networkUsage
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching dashboard data:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch dashboard data' 
+    });
+  }
+});
+
 app.get('/api/vms', async (req, res) => {
   try {
     // Get all nodes from database

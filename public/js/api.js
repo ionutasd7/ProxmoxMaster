@@ -1,37 +1,92 @@
 /**
- * API Service
+ * API Client
  * Handles all API requests to the server
  */
 export class API {
   constructor() {
     this.baseUrl = '/api';
+    this.token = localStorage.getItem('token');
   }
   
   /**
-   * Send a request to the API
+   * Set authentication token
+   * @param {string} token - Authentication token
+   */
+  setToken(token) {
+    this.token = token;
+    localStorage.setItem('token', token);
+  }
+  
+  /**
+   * Clear authentication token
+   */
+  clearToken() {
+    this.token = null;
+    localStorage.removeItem('token');
+  }
+  
+  /**
+   * Get headers for API requests
+   * @param {boolean} includeContentType - Whether to include content-type header
+   * @returns {Object} Headers
+   */
+  getHeaders(includeContentType = true) {
+    const headers = {};
+    
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    return headers;
+  }
+  
+  /**
+   * Make API request
+   * @param {string} method - HTTP method
    * @param {string} endpoint - API endpoint
-   * @param {Object} options - Fetch options
+   * @param {Object} data - Request data
+   * @param {boolean} includeContentType - Whether to include content-type header
    * @returns {Promise<Object>} Response data
    */
-  async request(endpoint, options = {}) {
+  async request(method, endpoint, data = null, includeContentType = true) {
+    const url = `${this.baseUrl}${endpoint}`;
+    
+    console.log(`API Request: ${method} ${endpoint}`);
+    
+    const options = {
+      method,
+      headers: this.getHeaders(includeContentType),
+      credentials: 'same-origin'
+    };
+    
+    if (data) {
+      options.body = JSON.stringify(data);
+    }
+    
     try {
-      console.log(`API Request: ${options.method || 'GET'} ${endpoint}`);
+      const response = await fetch(url, options);
+      const responseData = await response.json();
       
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        ...options,
-      });
-      
-      const data = await response.json();
-      console.log(`API Response from ${endpoint}:`, data);
+      console.log(`API Response from ${endpoint}:`, responseData);
       
       if (!response.ok) {
-        throw new Error(data.error || `API error: ${response.status}`);
+        if (response.status === 401) {
+          // Clear token if unauthorized
+          this.clearToken();
+        }
+        
+        throw {
+          status: response.status,
+          data: responseData,
+          message: responseData.message || responseData.error || 'API request failed'
+        };
       }
       
-      return data;
+      return responseData;
     } catch (error) {
       console.error(`API Error (${endpoint}):`, error);
       throw error;
@@ -39,176 +94,187 @@ export class API {
   }
   
   /**
-   * Get API status
-   * @returns {Promise<Object>} Status data
+   * GET request
+   * @param {string} endpoint - API endpoint
+   * @returns {Promise<Object>} Response data
    */
-  async getStatus() {
-    return this.request('/status');
+  async get(endpoint) {
+    return this.request('GET', endpoint);
   }
   
   /**
-   * Login user
+   * POST request
+   * @param {string} endpoint - API endpoint
+   * @param {Object} data - Request data
+   * @returns {Promise<Object>} Response data
+   */
+  async post(endpoint, data) {
+    return this.request('POST', endpoint, data);
+  }
+  
+  /**
+   * PUT request
+   * @param {string} endpoint - API endpoint
+   * @param {Object} data - Request data
+   * @returns {Promise<Object>} Response data
+   */
+  async put(endpoint, data) {
+    return this.request('PUT', endpoint, data);
+  }
+  
+  /**
+   * DELETE request
+   * @param {string} endpoint - API endpoint
+   * @returns {Promise<Object>} Response data
+   */
+  async delete(endpoint) {
+    return this.request('DELETE', endpoint);
+  }
+  
+  /**
+   * Get API status
+   * @returns {Promise<Object>} Status
+   */
+  async getStatus() {
+    return this.get('/status');
+  }
+  
+  /**
+   * Login
    * @param {string} username - Username
    * @param {string} password - Password
-   * @returns {Promise<Object>} User data
+   * @returns {Promise<Object>} Login response
    */
   async login(username, password) {
-    return this.request('/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
+    const response = await this.post('/login', { username, password });
+    
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    
+    return response;
+  }
+  
+  /**
+   * Logout
+   * @returns {Promise<Object>} Logout response
+   */
+  async logout() {
+    try {
+      await this.post('/logout');
+    } finally {
+      this.clearToken();
+    }
+    
+    return { success: true };
   }
   
   /**
    * Get current user
-   * @returns {Promise<Object>} User data
+   * @returns {Promise<Object>} User
    */
   async getCurrentUser() {
-    return this.request('/user');
-  }
-  
-  /**
-   * Update user settings
-   * @param {Object} userData - User data to update
-   * @returns {Promise<Object>} Updated user data
-   */
-  async updateUserSettings(userData) {
-    return this.request('/user', {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    });
-  }
-  
-  /**
-   * Logout user
-   * @returns {Promise<Object>} Logout status
-   */
-  async logout() {
-    return this.request('/logout', {
-      method: 'POST',
-    });
+    return this.get('/user');
   }
   
   /**
    * Get all nodes
-   * @returns {Promise<Array>} Nodes array
+   * @returns {Promise<Array>} Nodes
    */
   async getNodes() {
-    return this.request('/nodes');
-  }
-  
-  /**
-   * Add a new node
-   * @param {Object} nodeData - Node data
-   * @returns {Promise<Object>} Created node
-   */
-  async addNode(nodeData) {
-    return this.request('/nodes', {
-      method: 'POST',
-      body: JSON.stringify(nodeData),
-    });
-  }
-  
-  /**
-   * Delete a node
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Status
-   */
-  async deleteNode(nodeId) {
-    return this.request(`/nodes/${nodeId}`, {
-      method: 'DELETE',
-    });
+    return this.get('/nodes');
   }
   
   /**
    * Get node details
-   * @param {number} nodeId - Node ID
+   * @param {string} nodeId - Node ID
    * @returns {Promise<Object>} Node details
    */
   async getNodeDetails(nodeId) {
-    return this.request(`/nodes/${nodeId}`);
+    return this.get(`/nodes/${nodeId}`);
   }
   
   /**
-   * Get all VMs for a specific node
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Array>} VMs array
+   * Add a new node
+   * @param {Object} node - Node
+   * @returns {Promise<Object>} Added node
    */
-  async getNodeVMs(nodeId) {
-    return this.request(`/nodes/${nodeId}/qemu`);
+  async addNode(node) {
+    return this.post('/nodes', node);
   }
   
   /**
-   * Perform action on a VM (start, stop, restart)
-   * @param {number} nodeId - Node ID
+   * Test connection to a Proxmox API
+   * @param {Object} connectionDetails - Connection details
+   * @returns {Promise<Object>} Connection test result
+   */
+  async testConnection(connectionDetails) {
+    return this.post('/nodes/test-connection', connectionDetails);
+  }
+  
+  /**
+   * Delete a node
+   * @param {string} nodeId - Node ID
+   * @returns {Promise<Object>} Delete response
+   */
+  async deleteNode(nodeId) {
+    return this.delete(`/nodes/${nodeId}`);
+  }
+  
+  /**
+   * Get all VMs
+   * @returns {Promise<Object>} VMs response
+   */
+  async getVMs() {
+    return this.get('/vms');
+  }
+  
+  /**
+   * Get VM details
+   * @param {string} nodeId - Node ID
    * @param {string} vmId - VM ID
-   * @param {string} action - Action to perform (start, stop, restart)
-   * @returns {Promise<Object>} Action result
+   * @returns {Promise<Object>} VM details
+   */
+  async getVMDetails(nodeId, vmId) {
+    return this.get(`/nodes/${nodeId}/vms/${vmId}`);
+  }
+  
+  /**
+   * Perform VM action
+   * @param {string} nodeId - Node ID
+   * @param {string} vmId - VM ID
+   * @param {string} action - Action (start, stop, reset, etc.)
+   * @returns {Promise<Object>} Action response
    */
   async performVMAction(nodeId, vmId, action) {
-    return this.request(`/nodes/${nodeId}/qemu/${vmId}/action`, {
-      method: 'POST',
-      body: JSON.stringify({ action }),
-    });
+    return this.post(`/nodes/${nodeId}/vms/${vmId}/${action}`);
   }
   
   /**
-   * Get all containers for a specific node
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Array>} Containers array
+   * Get all containers
+   * @returns {Promise<Object>} Containers response
    */
-  async getNodeContainers(nodeId) {
-    return this.request(`/nodes/${nodeId}/lxc`);
+  async getContainers() {
+    return this.get('/containers');
   }
   
   /**
-   * Perform action on a container (start, stop, restart)
-   * @param {number} nodeId - Node ID
+   * Perform container action
+   * @param {string} nodeId - Node ID
    * @param {string} containerId - Container ID
-   * @param {string} action - Action to perform (start, stop, restart)
-   * @returns {Promise<Object>} Action result
+   * @param {string} action - Action (start, stop, restart, etc.)
+   * @returns {Promise<Object>} Action response
    */
   async performContainerAction(nodeId, containerId, action) {
-    return this.request(`/nodes/${nodeId}/lxc/${containerId}/action`, {
-      method: 'POST',
-      body: JSON.stringify({ action }),
-    });
+    return this.post(`/nodes/${nodeId}/containers/${containerId}/${action}`);
   }
   
   /**
-   * Get dashboard data including cluster stats
+   * Get dashboard data
    * @returns {Promise<Object>} Dashboard data
    */
   async getDashboardData() {
-    return this.request('/dashboard');
-  }
-  
-  /**
-   * Get all VMs across all nodes
-   * @returns {Promise<Object>} VMs data
-   */
-  async getVMs() {
-    return this.request('/vms');
-  }
-  
-  /**
-   * Get all containers across all nodes
-   * @returns {Promise<Object>} Containers data
-   */
-  async getContainers() {
-    return this.request('/containers');
-  }
-  
-  /**
-   * Test connection to a node
-   * @param {Object} connectionData - Connection settings
-   * @returns {Promise<Object>} Connection test results
-   */
-  async testConnection(connectionData) {
-    return this.request('/nodes/test-connection', {
-      method: 'POST',
-      body: JSON.stringify(connectionData),
-    });
+    return this.get('/dashboard');
   }
   
   /**
@@ -216,19 +282,7 @@ export class API {
    * @returns {Promise<Array>} VM templates
    */
   async getVMTemplates() {
-    return this.request('/templates/vm');
-  }
-  
-  /**
-   * Add VM template
-   * @param {Object} templateData - Template data
-   * @returns {Promise<Object>} Created template
-   */
-  async addVMTemplate(templateData) {
-    return this.request('/templates/vm', {
-      method: 'POST',
-      body: JSON.stringify(templateData),
-    });
+    return this.get('/templates/vm');
   }
   
   /**
@@ -236,18 +290,6 @@ export class API {
    * @returns {Promise<Array>} LXC templates
    */
   async getLXCTemplates() {
-    return this.request('/templates/lxc');
-  }
-  
-  /**
-   * Add LXC template
-   * @param {Object} templateData - Template data
-   * @returns {Promise<Object>} Created template
-   */
-  async addLXCTemplate(templateData) {
-    return this.request('/templates/lxc', {
-      method: 'POST',
-      body: JSON.stringify(templateData),
-    });
+    return this.get('/templates/lxc');
   }
 }

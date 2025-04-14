@@ -1,32 +1,53 @@
 /**
  * UI Helper
- * Handles common UI operations
+ * Common UI functions and components
  */
 export class UI {
   constructor(app) {
     this.app = app;
+    this.toastContainer = null;
+    this.loadingOverlay = null;
     
-    // Initialize Bootstrap tooltips and popovers
-    document.addEventListener('DOMContentLoaded', () => {
-      this.initializeBootstrapComponents();
-    });
+    this.initToastContainer();
+    this.initLoadingOverlay();
   }
   
   /**
-   * Initialize Bootstrap components
+   * Initialize toast container
    */
-  initializeBootstrapComponents() {
-    // Initialize tooltips
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-      return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-    
-    // Initialize popovers
-    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
-    popoverTriggerList.map(function (popoverTriggerEl) {
-      return new bootstrap.Popover(popoverTriggerEl);
-    });
+  initToastContainer() {
+    // Create toast container if it doesn't exist
+    if (!document.getElementById('toast-container')) {
+      const toastContainer = document.createElement('div');
+      toastContainer.id = 'toast-container';
+      toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+      document.body.appendChild(toastContainer);
+      this.toastContainer = toastContainer;
+    } else {
+      this.toastContainer = document.getElementById('toast-container');
+    }
+  }
+  
+  /**
+   * Initialize loading overlay
+   */
+  initLoadingOverlay() {
+    // Create loading overlay if it doesn't exist
+    if (!document.getElementById('loading-overlay')) {
+      const loadingOverlay = document.createElement('div');
+      loadingOverlay.id = 'loading-overlay';
+      loadingOverlay.className = 'loading-overlay';
+      loadingOverlay.innerHTML = `
+        <div class="loading-spinner">
+          <div class="spinner-border text-light" role="status"></div>
+          <p class="mt-2 text-light" id="loading-message">Loading...</p>
+        </div>
+      `;
+      document.body.appendChild(loadingOverlay);
+      this.loadingOverlay = loadingOverlay;
+    } else {
+      this.loadingOverlay = document.getElementById('loading-overlay');
+    }
   }
   
   /**
@@ -34,306 +55,265 @@ export class UI {
    * @param {string} message - Loading message
    */
   showLoading(message = 'Loading...') {
-    const loadingOverlay = document.getElementById('loading-overlay');
     const loadingMessage = document.getElementById('loading-message');
-    
-    if (loadingOverlay && loadingMessage) {
+    if (loadingMessage) {
       loadingMessage.textContent = message;
-      loadingOverlay.classList.remove('d-none');
     }
     
-    this.app.state.setLoading(true);
+    if (this.loadingOverlay) {
+      this.loadingOverlay.classList.add('show');
+    }
   }
   
   /**
    * Hide loading overlay
    */
   hideLoading() {
-    const loadingOverlay = document.getElementById('loading-overlay');
-    
-    if (loadingOverlay) {
-      loadingOverlay.classList.add('d-none');
+    if (this.loadingOverlay) {
+      this.loadingOverlay.classList.remove('show');
     }
-    
-    this.app.state.setLoading(false);
   }
   
   /**
-   * Show a success notification
-   * @param {string} message - Success message
-   */
-  showSuccess(message) {
-    this.showNotification('Success', message, 'success');
-  }
-  
-  /**
-   * Show an error notification
-   * @param {string} message - Error message
-   */
-  showError(message) {
-    this.showNotification('Error', message, 'danger');
-    this.app.state.setError(message);
-  }
-  
-  /**
-   * Show a warning notification
-   * @param {string} message - Warning message
-   */
-  showWarning(message) {
-    this.showNotification('Warning', message, 'warning');
-  }
-  
-  /**
-   * Show an info notification
-   * @param {string} message - Info message
-   */
-  showInfo(message) {
-    this.showNotification('Info', message, 'info');
-  }
-  
-  /**
-   * Show a notification toast
-   * @param {string} title - Notification title
+   * Show a toast notification
    * @param {string} message - Notification message
    * @param {string} type - Notification type (success, danger, warning, info)
+   * @param {number} duration - Duration in milliseconds
    */
-  showNotification(title, message, type = 'info') {
-    const toastEl = document.getElementById('notification-toast');
-    const toastTitle = document.getElementById('toast-title');
-    const toastMessage = document.getElementById('toast-message');
-    const toastIcon = document.getElementById('toast-icon');
+  showToast(message, type = 'primary', duration = 3000) {
+    const id = 'toast-' + Date.now();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
     
-    if (toastEl && toastTitle && toastMessage && toastIcon) {
-      // Set toast content
-      toastTitle.textContent = title;
-      toastMessage.textContent = message;
-      
-      // Set toast icon
-      toastIcon.className = 'me-2 fas';
-      
-      switch (type) {
-        case 'success':
-          toastIcon.classList.add('fa-check-circle', 'text-success');
-          break;
-        case 'danger':
-          toastIcon.classList.add('fa-exclamation-circle', 'text-danger');
-          break;
-        case 'warning':
-          toastIcon.classList.add('fa-exclamation-triangle', 'text-warning');
-          break;
-        case 'info':
-        default:
-          toastIcon.classList.add('fa-info-circle', 'text-info');
-          break;
-      }
-      
-      // Show toast
-      const toast = new bootstrap.Toast(toastEl, { delay: 5000 });
-      toast.show();
-    }
-  }
-  
-  /**
-   * Create a card with header and body
-   * @param {string} title - Card title
-   * @param {string} content - Card content (HTML)
-   * @param {string} icon - Card icon (Font Awesome class)
-   * @returns {string} Card HTML
-   */
-  createCard(title, content, icon = null) {
-    let iconHTML = '';
-    
-    if (icon) {
-      iconHTML = `<i class="fas fa-${icon} me-2"></i>`;
-    }
-    
-    return `
-      <div class="custom-card">
-        <div class="card-header">
-          <h5>${iconHTML}${title}</h5>
-          <div class="card-header-actions">
-            <button type="button" class="btn btn-sm btn-outline-secondary refresh-card-btn">
-              <i class="fas fa-sync-alt"></i>
-            </button>
-          </div>
-        </div>
-        <div class="card-body">
-          ${content}
-        </div>
-      </div>
-    `;
-  }
-  
-  /**
-   * Create a resource usage card
-   * @param {string} title - Resource title
-   * @param {number} percentage - Percentage value
-   * @param {string} label - Resource label
-   * @param {string} type - Resource type (cpu, memory, disk)
-   * @returns {string} Resource card HTML
-   */
-  createResourceCard(title, percentage, label, type = 'cpu') {
-    let colorClass = 'cpu-bar';
-    
-    if (type === 'memory') {
-      colorClass = 'memory-bar';
-    } else if (type === 'disk') {
-      colorClass = 'disk-bar';
-    }
-    
-    return `
-      <div class="resource-card">
-        <div class="resource-header">
-          <div class="resource-title">${title}</div>
-          <div class="resource-value" id="${type}-usage-percentage">${percentage}%</div>
-        </div>
-        <div class="resource-bar">
-          <div class="resource-progress ${colorClass}" style="width: ${percentage}%;"></div>
-        </div>
-        <div class="mt-2 text-muted small text-end" id="${type}-usage-label">${label}</div>
-      </div>
-    `;
-  }
-  
-  /**
-   * Get status badge HTML
-   * @param {string} status - Status (online, offline, warning, unknown)
-   * @returns {string} Status badge HTML
-   */
-  getStatusBadge(status) {
-    status = status ? status.toLowerCase() : 'unknown';
-    
-    let badgeClass = 'status-unknown';
-    let badgeText = 'Unknown';
-    let badgeIcon = 'question-circle';
-    
-    switch (status) {
-      case 'online':
-        badgeClass = 'status-online';
-        badgeText = 'Online';
-        badgeIcon = 'check-circle';
+    let icon = 'info-circle';
+    switch (type) {
+      case 'success':
+        icon = 'check-circle';
         break;
-      case 'offline':
-        badgeClass = 'status-offline';
-        badgeText = 'Offline';
-        badgeIcon = 'times-circle';
+      case 'danger':
+        icon = 'exclamation-circle';
         break;
       case 'warning':
-        badgeClass = 'status-warning';
-        badgeText = 'Warning';
-        badgeIcon = 'exclamation-triangle';
+        icon = 'exclamation-triangle';
         break;
     }
     
-    return `
-      <span class="status-badge ${badgeClass}">
-        <i class="fas fa-${badgeIcon} me-1"></i> ${badgeText}
-      </span>
+    toast.innerHTML = `
+      <div class="toast-header">
+        <i class="fas fa-${icon} me-2 text-${type}"></i>
+        <strong class="me-auto">Proxmox Manager</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">
+        ${message}
+      </div>
     `;
+    
+    this.toastContainer.appendChild(toast);
+    
+    const bsToast = new bootstrap.Toast(toast, {
+      autohide: true,
+      delay: duration
+    });
+    
+    bsToast.show();
+    
+    // Remove toast after it's hidden
+    toast.addEventListener('hidden.bs.toast', () => {
+      toast.remove();
+    });
   }
   
   /**
-   * Format bytes to human-readable size
-   * @param {number} bytes - Bytes
-   * @param {number} decimals - Decimal places
-   * @returns {string} Formatted size
+   * Show a success toast notification
+   * @param {string} message - Notification message
    */
-  formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  showSuccess(message) {
+    this.showToast(message, 'success');
   }
   
   /**
-   * Format uptime to human-readable time
-   * @param {number} seconds - Uptime in seconds
-   * @returns {string} Formatted uptime
+   * Show an error toast notification
+   * @param {string} message - Notification message
    */
-  formatUptime(seconds) {
-    if (!seconds || seconds <= 0) return 'N/A';
-    
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (days > 0) {
-      return `${days}d ${hours}h ${minutes}m`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    } else {
-      return `${minutes}m`;
-    }
+  showError(message) {
+    this.showToast(message, 'danger');
   }
   
   /**
-   * Format a date to a human-readable string
-   * @param {string} dateString - Date string
-   * @returns {string} Formatted date
+   * Show a warning toast notification
+   * @param {string} message - Notification message
    */
-  formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    
-    const date = new Date(dateString);
-    return date.toLocaleString();
+  showWarning(message) {
+    this.showToast(message, 'warning');
   }
   
   /**
-   * Show a confirm dialog
+   * Show an info toast notification
+   * @param {string} message - Notification message
+   */
+  showInfo(message) {
+    this.showToast(message, 'info');
+  }
+  
+  /**
+   * Show a confirmation dialog
    * @param {string} title - Dialog title
    * @param {string} message - Dialog message
    * @param {string} confirmText - Confirm button text
    * @param {string} cancelText - Cancel button text
-   * @returns {Promise<boolean>} User confirmation
+   * @returns {Promise<boolean>} Whether confirmed
    */
   confirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel') {
     return new Promise((resolve) => {
+      const id = 'confirm-modal-' + Date.now();
+      
       // Create modal element
-      const modalId = 'confirm-modal-' + Date.now();
-      const modalHTML = `
-        <div class="modal fade" id="${modalId}" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title">${title}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <div class="modal-body">
-                ${message}
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
-                <button type="button" class="btn btn-primary confirm-btn">${confirmText}</button>
-              </div>
+      const modal = document.createElement('div');
+      modal.className = 'modal fade';
+      modal.id = id;
+      modal.setAttribute('tabindex', '-1');
+      modal.setAttribute('aria-hidden', 'true');
+      
+      modal.innerHTML = `
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">${title}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p>${message}</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
+              <button type="button" class="btn btn-primary" id="${id}-confirm">${confirmText}</button>
             </div>
           </div>
         </div>
       `;
       
-      // Append modal to body
-      document.body.insertAdjacentHTML('beforeend', modalHTML);
+      // Add modal to document
+      document.body.appendChild(modal);
       
-      const modalEl = document.getElementById(modalId);
-      const modal = new bootstrap.Modal(modalEl);
+      // Initialize Bootstrap modal
+      const bsModal = new bootstrap.Modal(modal);
       
       // Add event listeners
-      modalEl.querySelector('.confirm-btn').addEventListener('click', () => {
-        modal.hide();
+      const confirmButton = document.getElementById(`${id}-confirm`);
+      confirmButton.addEventListener('click', () => {
+        bsModal.hide();
         resolve(true);
       });
       
-      modalEl.addEventListener('hidden.bs.modal', () => {
-        modalEl.remove();
+      modal.addEventListener('hidden.bs.modal', () => {
+        modal.remove();
         resolve(false);
       });
       
       // Show modal
-      modal.show();
+      bsModal.show();
     });
+  }
+  
+  /**
+   * Show a prompt dialog
+   * @param {string} title - Dialog title
+   * @param {string} message - Dialog message
+   * @param {string} defaultValue - Default input value
+   * @param {string} confirmText - Confirm button text
+   * @param {string} cancelText - Cancel button text
+   * @returns {Promise<string|null>} User input or null if cancelled
+   */
+  prompt(title, message, defaultValue = '', confirmText = 'Confirm', cancelText = 'Cancel') {
+    return new Promise((resolve) => {
+      const id = 'prompt-modal-' + Date.now();
+      
+      // Create modal element
+      const modal = document.createElement('div');
+      modal.className = 'modal fade';
+      modal.id = id;
+      modal.setAttribute('tabindex', '-1');
+      modal.setAttribute('aria-hidden', 'true');
+      
+      modal.innerHTML = `
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">${title}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p>${message}</p>
+              <input type="text" class="form-control" id="${id}-input" value="${defaultValue}">
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
+              <button type="button" class="btn btn-primary" id="${id}-confirm">${confirmText}</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Add modal to document
+      document.body.appendChild(modal);
+      
+      // Initialize Bootstrap modal
+      const bsModal = new bootstrap.Modal(modal);
+      
+      // Add event listeners
+      const confirmButton = document.getElementById(`${id}-confirm`);
+      const input = document.getElementById(`${id}-input`);
+      
+      confirmButton.addEventListener('click', () => {
+        bsModal.hide();
+        resolve(input.value);
+      });
+      
+      modal.addEventListener('hidden.bs.modal', () => {
+        modal.remove();
+        resolve(null);
+      });
+      
+      // Show modal
+      bsModal.show();
+      
+      // Focus input
+      input.focus();
+    });
+  }
+  
+  /**
+   * Get status badge
+   * @param {string} status - Status
+   * @returns {string} HTML
+   */
+  getStatusBadge(status) {
+    let badgeClass = 'badge text-bg-secondary';
+    let icon = 'question-circle';
+    
+    switch (status) {
+      case 'online':
+      case 'running':
+        badgeClass = 'badge text-bg-success';
+        icon = 'check-circle';
+        break;
+      case 'offline':
+      case 'stopped':
+        badgeClass = 'badge text-bg-danger';
+        icon = 'stop-circle';
+        break;
+      case 'warning':
+      case 'paused':
+        badgeClass = 'badge text-bg-warning';
+        icon = 'exclamation-triangle';
+        break;
+    }
+    
+    return `<span class="${badgeClass}"><i class="fas fa-${icon} me-1"></i> ${status}</span>`;
   }
 }

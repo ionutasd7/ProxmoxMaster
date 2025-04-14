@@ -1,12 +1,10 @@
 /**
- * Dashboard State Management
- * 
- * This module preserves dashboard data across refreshes 
- * and prevents zero values from overwriting good data
+ * Dashboard State
+ * Manages and preserves dashboard data across refreshes
  */
-
 class DashboardState {
   constructor() {
+    // Initialize dashboard data with default values
     this.data = {
       cluster: {
         nodes: [],
@@ -30,98 +28,145 @@ class DashboardState {
           inbound: 0,
           outbound: 0
         }
-      }
+      },
+      // Historical data for charts
+      history: {
+        cpu: {
+          data: [],
+          labels: []
+        },
+        memory: {
+          data: [],
+          labels: []
+        },
+        network: {
+          inbound: [],
+          outbound: [],
+          labels: []
+        }
+      },
+      // Last updated timestamp
+      lastUpdated: null
     };
     
-    // Load state if available
-    this.loadState();
+    // Load data from localStorage if available
+    this.loadFromLocalStorage();
+    
+    console.log('Dashboard state module loaded globally');
   }
   
   /**
-   * Update dashboard data, preserving good values
-   * 
-   * @param {Object} newData - New dashboard data from API
-   * @returns {Object} Merged data with preserved good values
+   * Update dashboard data
+   * @param {Object} newData - New dashboard data
+   * @returns {Object} Updated data with preserved history
    */
   updateData(newData) {
-    // Deep clone current data
-    const currentData = JSON.parse(JSON.stringify(this.data));
-    
-    if (!newData || !newData.cluster) {
-      return currentData;
+    if (!newData || !newData.success || !newData.cluster) {
+      console.error('Invalid dashboard data:', newData);
+      return this.data;
     }
     
-    const { cluster } = newData;
+    // Update cluster data
+    this.data.cluster = newData.cluster;
     
-    // Merge nodes
-    if (cluster.nodes && Array.isArray(cluster.nodes)) {
-      currentData.cluster.nodes = cluster.nodes;
-    }
+    // Update timestamp
+    this.data.lastUpdated = new Date().toISOString();
     
-    // Merge stats carefully (don't overwrite good values with zeros)
-    if (cluster.stats) {
-      const newStats = cluster.stats;
-      const currentStats = currentData.cluster.stats;
-      
-      // For each stat, only update if new value exists and is not zero (unless current is also zero)
-      for (const key in newStats) {
-        if (newStats[key] !== undefined && (newStats[key] > 0 || currentStats[key] === 0)) {
-          currentStats[key] = newStats[key];
-        }
-      }
-    }
+    // Update history
+    this.updateHistory();
     
-    // Merge network usage 
-    if (cluster.networkUsage) {
-      const newNetwork = cluster.networkUsage;
-      const currentNetwork = currentData.cluster.networkUsage;
-      
-      // For each network stat, only update if new value exists and is not zero (unless current is also zero)
-      for (const key in newNetwork) {
-        if (newNetwork[key] !== undefined && (newNetwork[key] > 0 || currentNetwork[key] === 0)) {
-          currentNetwork[key] = newNetwork[key];
-        }
-      }
-    }
+    // Save to localStorage
+    this.saveToLocalStorage();
     
-    // Save merged state
-    this.data = currentData;
-    this.saveState();
-    
-    return currentData;
+    return this.data;
   }
   
   /**
-   * Save state to sessionStorage
-   * 
-   * @private
+   * Update history data for charts
    */
-  saveState() {
-    try {
-      sessionStorage.setItem('dashboardState', JSON.stringify(this.data));
-    } catch (error) {
-      console.error('Failed to save dashboard state to sessionStorage:', error);
+  updateHistory() {
+    const currentTime = new Date();
+    const timeLabel = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Update CPU history
+    if (this.data.history.cpu.data.length >= 12) {
+      this.data.history.cpu.data.shift();
+      this.data.history.cpu.labels.shift();
     }
+    this.data.history.cpu.data.push(this.data.cluster.stats.cpuUsage * 100);
+    this.data.history.cpu.labels.push(timeLabel);
+    
+    // Update memory history
+    if (this.data.history.memory.data.length >= 12) {
+      this.data.history.memory.data.shift();
+      this.data.history.memory.labels.shift();
+    }
+    this.data.history.memory.data.push(this.data.cluster.stats.usedMemory);
+    this.data.history.memory.labels.push(timeLabel);
+    
+    // Update network history
+    if (this.data.history.network.inbound.length >= 12) {
+      this.data.history.network.inbound.shift();
+      this.data.history.network.outbound.shift();
+      this.data.history.network.labels.shift();
+    }
+    this.data.history.network.inbound.push(this.data.cluster.networkUsage.inbound);
+    this.data.history.network.outbound.push(this.data.cluster.networkUsage.outbound);
+    this.data.history.network.labels.push(timeLabel);
   }
   
   /**
-   * Load state from sessionStorage
-   * 
-   * @private
+   * Get dashboard data
+   * @returns {Object} Dashboard data
    */
-  loadState() {
-    try {
-      const savedState = sessionStorage.getItem('dashboardState');
-      if (savedState) {
-        this.data = JSON.parse(savedState);
-      }
-    } catch (error) {
-      console.error('Failed to load dashboard state from sessionStorage:', error);
-    }
+  getData() {
+    return this.data;
   }
   
   /**
-   * Clear all saved state
+   * Get CPU usage history
+   * @returns {Object} CPU usage history
+   */
+  getCPUHistory() {
+    return {
+      data: this.data.history.cpu.data,
+      labels: this.data.history.cpu.labels
+    };
+  }
+  
+  /**
+   * Get memory usage history
+   * @returns {Object} Memory usage history
+   */
+  getMemoryHistory() {
+    return {
+      data: this.data.history.memory.data,
+      labels: this.data.history.memory.labels
+    };
+  }
+  
+  /**
+   * Get network usage history
+   * @returns {Object} Network usage history
+   */
+  getNetworkHistory() {
+    return {
+      inbound: this.data.history.network.inbound,
+      outbound: this.data.history.network.outbound,
+      labels: this.data.history.network.labels
+    };
+  }
+  
+  /**
+   * Get last updated timestamp
+   * @returns {string} Last updated timestamp
+   */
+  getLastUpdated() {
+    return this.data.lastUpdated;
+  }
+  
+  /**
+   * Clear dashboard state
    */
   clearState() {
     this.data = {
@@ -147,15 +192,56 @@ class DashboardState {
           inbound: 0,
           outbound: 0
         }
-      }
+      },
+      history: {
+        cpu: {
+          data: [],
+          labels: []
+        },
+        memory: {
+          data: [],
+          labels: []
+        },
+        network: {
+          inbound: [],
+          outbound: [],
+          labels: []
+        }
+      },
+      lastUpdated: null
     };
     
+    localStorage.removeItem('dashboardState');
+  }
+  
+  /**
+   * Save state to local storage
+   */
+  saveToLocalStorage() {
     try {
-      sessionStorage.removeItem('dashboardState');
+      const serializedState = JSON.stringify(this.data);
+      localStorage.setItem('dashboardState', serializedState);
     } catch (error) {
-      console.error('Failed to clear dashboard state from sessionStorage:', error);
+      console.error('Failed to save dashboard state to local storage:', error);
+    }
+  }
+  
+  /**
+   * Load state from local storage
+   */
+  loadFromLocalStorage() {
+    try {
+      const serializedState = localStorage.getItem('dashboardState');
+      
+      if (serializedState) {
+        const savedState = JSON.parse(serializedState);
+        this.data = savedState;
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard state from local storage:', error);
     }
   }
 }
 
+// Create a singleton instance
 export const dashboardState = new DashboardState();

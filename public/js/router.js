@@ -1,109 +1,228 @@
 /**
- * Application Router
- * Handles routing between different views
+ * Router
+ * Handles client-side routing
  */
 export class Router {
   constructor(app) {
     this.app = app;
-    this.routes = [
-      'auth',
-      'dashboard',
-      'nodes',
-      'node-details',
-      'vms',
-      'vm-details',
-      'containers',
-      'container-details',
-      'storage',
-      'network',
-      'templates',
-      'updates',
-      'settings'
-    ];
+    this.routes = {};
+    this.currentRoute = null;
+    this.currentParams = {};
     
-    // Listen for URL changes
-    window.addEventListener('popstate', this.handleUrlChange.bind(this));
+    // Register default routes
+    this.registerRoutes();
+    
+    // Initialize popstate event listener
+    window.addEventListener('popstate', (event) => {
+      this.handlePopState(event);
+    });
+    
+    // Parse initial URL
+    this.parseUrl();
+  }
+  
+  /**
+   * Register application routes
+   */
+  registerRoutes() {
+    this.routes = {
+      // Main routes
+      'auth': {
+        view: 'auth',
+        title: 'Login - Proxmox Manager'
+      },
+      'dashboard': {
+        view: 'dashboard',
+        title: 'Dashboard - Proxmox Manager',
+        authRequired: true
+      },
+      'nodes': {
+        view: 'nodes',
+        title: 'Nodes - Proxmox Manager',
+        authRequired: true
+      },
+      'node-details': {
+        view: 'nodes',
+        method: 'renderDetails',
+        title: 'Node Details - Proxmox Manager',
+        authRequired: true
+      },
+      'vms': {
+        view: 'vms',
+        title: 'Virtual Machines - Proxmox Manager',
+        authRequired: true
+      },
+      'containers': {
+        view: 'containers',
+        title: 'Containers - Proxmox Manager',
+        authRequired: true
+      },
+      'storage': {
+        view: 'storage',
+        title: 'Storage - Proxmox Manager',
+        authRequired: true
+      },
+      'network': {
+        view: 'network',
+        title: 'Network - Proxmox Manager',
+        authRequired: true
+      },
+      'templates': {
+        view: 'templates',
+        title: 'Templates - Proxmox Manager',
+        authRequired: true
+      },
+      'settings': {
+        view: 'settings',
+        title: 'Settings - Proxmox Manager',
+        authRequired: true
+      }
+    };
   }
   
   /**
    * Navigate to a route
-   * @param {string} route - Route name
+   * @param {string} routeName - Route name
    * @param {Object} params - Route parameters
-   * @param {boolean} addToHistory - Whether to add to browser history
    */
-  navigate(route, params = {}, addToHistory = true) {
-    console.log('Navigating to route:', route, params);
+  navigate(routeName, params = {}) {
+    console.log('Navigating to route:', routeName, params);
     
-    // Validate route
-    if (!this.routes.includes(route)) {
-      console.error(`Invalid route: ${route}`);
-      route = 'dashboard';
+    // Get route definition
+    const route = this.routes[routeName];
+    if (!route) {
+      console.error(`Route "${routeName}" not found`);
+      this.navigate('dashboard');
+      return;
     }
     
-    // Add to browser history
-    if (addToHistory) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('route', route);
-      
-      // Add params to URL
-      Object.keys(params).forEach(key => {
-        url.searchParams.set(key, params[key]);
-      });
-      
-      window.history.pushState({
-        route,
-        params,
-      }, '', url.toString());
+    // Check if authentication is required
+    if (route.authRequired && !this.app.state.isAuthenticated()) {
+      console.log('Authentication required for route:', routeName);
+      this.navigate('auth');
+      return;
     }
     
-    // Render the route
-    this.renderRoute(route, params);
+    // Update URL
+    const url = this.getRouteUrl(routeName, params);
+    window.history.pushState({ route: routeName, params }, route.title, url);
+    
+    // Update document title
+    document.title = route.title;
+    
+    // Set current route and params
+    this.currentRoute = routeName;
+    this.currentParams = params;
+    
+    // Render view
+    this.renderView(route, params);
   }
   
   /**
-   * Render the current route
-   * @param {string} route - Route name
+   * Handle popstate event (browser back/forward)
+   * @param {PopStateEvent} event - Popstate event
+   */
+  handlePopState(event) {
+    const state = event.state || { route: 'dashboard', params: {} };
+    const route = this.routes[state.route];
+    
+    if (route) {
+      // Check if authentication is required
+      if (route.authRequired && !this.app.state.isAuthenticated()) {
+        console.log('Authentication required for route:', state.route);
+        this.navigate('auth');
+        return;
+      }
+      
+      // Update document title
+      document.title = route.title;
+      
+      // Set current route and params
+      this.currentRoute = state.route;
+      this.currentParams = state.params;
+      
+      // Render view
+      this.renderView(route, state.params);
+    }
+  }
+  
+  /**
+   * Parse current URL
+   */
+  parseUrl() {
+    // Get path from URL
+    const path = window.location.pathname;
+    
+    // Default route
+    let routeName = 'dashboard';
+    let params = {};
+    
+    // Parse route and params from URL
+    if (path !== '/') {
+      const pathParts = path.split('/').filter(Boolean);
+      if (pathParts.length > 0) {
+        const possibleRoute = pathParts[0];
+        
+        // Check if route exists
+        if (this.routes[possibleRoute]) {
+          routeName = possibleRoute;
+          
+          // Parse params
+          if (pathParts.length > 1) {
+            // TODO: Parse params from URL (for the future)
+          }
+        }
+      }
+    }
+    
+    // Navigate to parsed route
+    this.navigate(routeName, params);
+  }
+  
+  /**
+   * Get URL for a route
+   * @param {string} routeName - Route name
+   * @param {Object} params - Route parameters
+   * @returns {string} URL
+   */
+  getRouteUrl(routeName, params = {}) {
+    // Simple URL generation
+    if (routeName === 'dashboard') {
+      return '/';
+    }
+    
+    // Add params to URL if needed
+    if (routeName === 'node-details' && params.id) {
+      return `/nodes/${params.id}`;
+    }
+    
+    return `/${routeName}`;
+  }
+  
+  /**
+   * Render view for a route
+   * @param {Object} route - Route definition
    * @param {Object} params - Route parameters
    */
-  renderRoute(route, params = {}) {
-    // Clear main content
-    const appElement = document.getElementById('app');
+  renderView(route, params = {}) {
+    const viewName = route.view;
+    if (!viewName) {
+      console.error('No view specified for route:', route);
+      return;
+    }
     
-    // Delegate rendering to the appropriate view
-    if (route === 'auth') {
-      if (this.app.views.auth) {
-        this.app.views.auth.render();
-      }
-    } else if (this.app.views[route]) {
-      // Check if we need to render a detail view
-      if (route.endsWith('-details') && this.app.views[route.split('-')[0]]) {
-        // For detail views, render via parent view
-        this.app.views[route.split('-')[0]].renderDetails(params);
-      } else {
-        // Render regular view
-        this.app.views[route].render(params);
-      }
+    const view = this.app.views[viewName];
+    if (!view) {
+      console.error(`View "${viewName}" not found`);
+      return;
+    }
+    
+    // Call render method or custom method if specified
+    const method = route.method || 'render';
+    if (typeof view[method] === 'function') {
+      view[method](params);
     } else {
-      console.error(`No view found for route: ${route}`);
+      console.error(`Method "${method}" not found in view "${viewName}"`);
     }
-  }
-  
-  /**
-   * Handle URL change (when back/forward buttons are clicked)
-   */
-  handleUrlChange() {
-    const url = new URL(window.location.href);
-    const route = url.searchParams.get('route') || 'dashboard';
-    
-    // Extract parameters from URL
-    const params = {};
-    url.searchParams.forEach((value, key) => {
-      if (key !== 'route') {
-        params[key] = value;
-      }
-    });
-    
-    // Navigate to the route without adding to history
-    this.navigate(route, params, false);
   }
 }

@@ -1,29 +1,58 @@
 /**
- * Application State Management
- * Handles the application state and state changes
+ * Application State
+ * Centralized state management for the application
  */
 export class AppState {
   constructor() {
+    // Default application state
     this.state = {
+      // User
       user: null,
+      
+      // Nodes
       nodes: [],
+      
+      // Virtual Machines
       vms: [],
+      
+      // Containers
       containers: [],
-      selectedNode: null,
-      selectedVM: null,
-      selectedContainer: null,
-      isLoading: false,
-      error: null,
-      dashboardData: null,
+      
+      // Templates
       vmTemplates: [],
       lxcTemplates: [],
+      
+      // Dashboard data
+      dashboard: {
+        stats: {
+          totalNodes: 0,
+          onlineNodes: 0,
+          offlineNodes: 0,
+          totalVMs: 0,
+          runningVMs: 0,
+          totalContainers: 0,
+          runningContainers: 0,
+          totalCPUs: 0,
+          cpuUsage: 0,
+          totalMemory: 0,
+          usedMemory: 0,
+          totalStorage: 0,
+          usedStorage: 0
+        },
+        networkUsage: {
+          inbound: 0,
+          outbound: 0
+        },
+        history: []
+      }
     };
     
-    this.subscribers = [];
+    // Initialize from local storage if available
+    this.loadFromLocalStorage();
   }
   
   /**
-   * Get current state
+   * Get the current state
    * @returns {Object} Current state
    */
   getState() {
@@ -31,136 +60,158 @@ export class AppState {
   }
   
   /**
-   * Subscribe to state changes
-   * @param {Function} callback - Callback function
-   * @returns {Function} Unsubscribe function
-   */
-  subscribe(callback) {
-    this.subscribers.push(callback);
-    return () => {
-      this.subscribers = this.subscribers.filter(subscriber => subscriber !== callback);
-    };
-  }
-  
-  /**
-   * Notify all subscribers of state change
-   */
-  notifySubscribers() {
-    this.subscribers.forEach(callback => callback(this.state));
-  }
-  
-  /**
-   * Update state
-   * @param {Object} newState - New state object
-   */
-  setState(newState) {
-    this.state = {
-      ...this.state,
-      ...newState,
-    };
-    this.notifySubscribers();
-  }
-  
-  /**
-   * Set user
-   * @param {Object} user - User object
+   * Set the user
+   * @param {Object} user - User
    */
   setUser(user) {
-    this.setState({ user });
+    this.state.user = user;
+    this.saveToLocalStorage();
   }
   
   /**
-   * Clear user
+   * Clear the user
    */
   clearUser() {
-    this.setState({ user: null });
+    this.state.user = null;
+    this.saveToLocalStorage();
   }
   
   /**
    * Set nodes
-   * @param {Array} nodes - Nodes array
+   * @param {Array} nodes - Nodes
    */
   setNodes(nodes) {
-    this.setState({ nodes });
+    this.state.nodes = nodes || [];
+    this.saveToLocalStorage();
   }
   
   /**
    * Set virtual machines
-   * @param {Array} vms - VMs array
+   * @param {Array} vms - Virtual machines
    */
   setVMs(vms) {
-    this.setState({ vms });
+    this.state.vms = vms || [];
+    this.saveToLocalStorage();
   }
   
   /**
    * Set containers
-   * @param {Array} containers - Containers array
+   * @param {Array} containers - Containers
    */
   setContainers(containers) {
-    this.setState({ containers });
-  }
-  
-  /**
-   * Set selected node
-   * @param {Object|null} node - Selected node or null
-   */
-  setSelectedNode(node) {
-    this.setState({ selectedNode: node });
-  }
-  
-  /**
-   * Set selected VM
-   * @param {Object|null} vm - Selected VM or null
-   */
-  setSelectedVM(vm) {
-    this.setState({ selectedVM: vm });
-  }
-  
-  /**
-   * Set selected container
-   * @param {Object|null} container - Selected container or null
-   */
-  setSelectedContainer(container) {
-    this.setState({ selectedContainer: container });
-  }
-  
-  /**
-   * Set loading state
-   * @param {boolean} isLoading - Is loading
-   */
-  setLoading(isLoading) {
-    this.setState({ isLoading });
-  }
-  
-  /**
-   * Set error
-   * @param {string|null} error - Error message or null
-   */
-  setError(error) {
-    this.setState({ error });
-  }
-  
-  /**
-   * Set dashboard data
-   * @param {Object} dashboardData - Dashboard data
-   */
-  setDashboardData(dashboardData) {
-    this.setState({ dashboardData });
+    this.state.containers = containers || [];
+    this.saveToLocalStorage();
   }
   
   /**
    * Set VM templates
-   * @param {Array} vmTemplates - VM templates
+   * @param {Array} templates - VM templates
    */
-  setVMTemplates(vmTemplates) {
-    this.setState({ vmTemplates });
+  setVMTemplates(templates) {
+    this.state.vmTemplates = templates || [];
+    this.saveToLocalStorage();
   }
   
   /**
    * Set LXC templates
-   * @param {Array} lxcTemplates - LXC templates
+   * @param {Array} templates - LXC templates
    */
-  setLXCTemplates(lxcTemplates) {
-    this.setState({ lxcTemplates });
+  setLXCTemplates(templates) {
+    this.state.lxcTemplates = templates || [];
+    this.saveToLocalStorage();
+  }
+  
+  /**
+   * Set dashboard data
+   * @param {Object} data - Dashboard data
+   */
+  setDashboardData(data) {
+    if (data) {
+      this.state.dashboard = data;
+      this.saveToLocalStorage();
+    }
+  }
+  
+  /**
+   * Check if user is authenticated
+   * @returns {boolean} Whether user is authenticated
+   */
+  isAuthenticated() {
+    return !!this.state.user;
+  }
+  
+  /**
+   * Save state to local storage
+   */
+  saveToLocalStorage() {
+    try {
+      const serializedState = JSON.stringify({
+        user: this.state.user,
+        // Don't store large datasets in localStorage
+        // They will be fetched from API when needed
+      });
+      
+      localStorage.setItem('proxmoxManagerState', serializedState);
+    } catch (error) {
+      console.error('Failed to save state to local storage:', error);
+    }
+  }
+  
+  /**
+   * Load state from local storage
+   */
+  loadFromLocalStorage() {
+    try {
+      const serializedState = localStorage.getItem('proxmoxManagerState');
+      
+      if (serializedState) {
+        const savedState = JSON.parse(serializedState);
+        
+        // Restore saved state properties
+        if (savedState.user) {
+          this.state.user = savedState.user;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load state from local storage:', error);
+    }
+  }
+  
+  /**
+   * Clear all state
+   */
+  clearState() {
+    this.state = {
+      user: null,
+      nodes: [],
+      vms: [],
+      containers: [],
+      vmTemplates: [],
+      lxcTemplates: [],
+      dashboard: {
+        stats: {
+          totalNodes: 0,
+          onlineNodes: 0,
+          offlineNodes: 0,
+          totalVMs: 0,
+          runningVMs: 0,
+          totalContainers: 0,
+          runningContainers: 0,
+          totalCPUs: 0,
+          cpuUsage: 0,
+          totalMemory: 0,
+          usedMemory: 0,
+          totalStorage: 0,
+          usedStorage: 0
+        },
+        networkUsage: {
+          inbound: 0,
+          outbound: 0
+        },
+        history: []
+      }
+    };
+    
+    localStorage.removeItem('proxmoxManagerState');
   }
 }

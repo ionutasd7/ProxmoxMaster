@@ -76,6 +76,15 @@ class App {
   async init() {
     console.log('Initializing Proxmox Manager...');
     
+    // Preload the dashboard state module and make it globally available
+    try {
+      const dashboardStateModule = await import('./dashboard-state.js');
+      window.dashboardState = dashboardStateModule.dashboardState;
+      console.log('Dashboard state module loaded globally');
+    } catch (stateError) {
+      console.warn('Error preloading dashboard state:', stateError);
+    }
+    
     // Check API status
     try {
       const status = await this.api.getStatus();

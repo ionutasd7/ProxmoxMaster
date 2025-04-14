@@ -284,10 +284,10 @@ app.get('/api/dashboard', async (req, res) => {
     
     const nodes = nodesResult.rows;
     const clusterStats = {
-      totalNodes: nodes.length,
+      totalNodes: 0,  // Start with 0 and only count valid nodes
       onlineNodes: 0,
       warningNodes: 0,
-      offlineNodes: nodes.length, // Default all to offline until proven otherwise
+      offlineNodes: 0, // Start with 0 and increment based on node status
       totalVMs: 0,
       runningVMs: 0,
       totalContainers: 0,
@@ -352,8 +352,8 @@ app.get('/api/dashboard', async (req, res) => {
           
           // Update node status to online
           node.status = 'online';
+          clusterStats.totalNodes++;
           clusterStats.onlineNodes++;
-          clusterStats.offlineNodes--;
           
           // Add CPU, memory, and storage data
           const cpuInfo = statusData.cpuinfo || {};
@@ -442,6 +442,10 @@ app.get('/api/dashboard', async (req, res) => {
         } catch (authError) {
           console.error(`Authentication or API error for node ${node.name}:`, authError.message);
           
+          // Update stats to count this as an offline node
+          clusterStats.totalNodes++;
+          clusterStats.offlineNodes++;
+          
           // Add node with error status
           nodeDetails.push({
             id: node.id,
@@ -460,6 +464,10 @@ app.get('/api/dashboard', async (req, res) => {
         }
       } catch (nodeError) {
         console.error(`Error processing node ${dbNode.name}:`, nodeError.message);
+        
+        // Update stats to count this as an unknown node
+        clusterStats.totalNodes++;
+        clusterStats.offlineNodes++;
         
         // Add node with error status
         nodeDetails.push({

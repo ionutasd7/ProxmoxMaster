@@ -714,7 +714,9 @@ export class DashboardView {
           </div>
           
           <div class="mt-2 mb-3">
-            <div class="status-badge status-${(node.status || node.node_status || 'unknown').toLowerCase()}">${node.status || node.node_status || 'Unknown'}</div>
+            <div class="status-badge status-${(node.status || node.node_status || 'unknown').toLowerCase()}">
+              ${(node.status || node.node_status || 'Unknown').charAt(0).toUpperCase() + (node.status || node.node_status || 'unknown').slice(1).toLowerCase()}
+            </div>
           </div>
           
           <hr class="my-2" style="border-color: rgba(255,255,255,0.1);">

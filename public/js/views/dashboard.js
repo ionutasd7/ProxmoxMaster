@@ -928,21 +928,21 @@ export class DashboardView {
                       <i class="fas fa-check"></i>
                     </div>
                     <div class="status-label mt-2">Online Nodes</div>
-                    <div class="status-value" id="online-nodes">0</div>
+                    <div class="status-value" id="online-nodes">${clusterStats.onlineNodes}</div>
                   </div>
                   <div class="col-4">
                     <div class="status-circle bg-warning">
                       <i class="fas fa-exclamation"></i>
                     </div>
                     <div class="status-label mt-2">Warning Nodes</div>
-                    <div class="status-value" id="warning-nodes">0</div>
+                    <div class="status-value" id="warning-nodes">${clusterStats.warningNodes}</div>
                   </div>
                   <div class="col-4">
                     <div class="status-circle bg-danger">
                       <i class="fas fa-times"></i>
                     </div>
                     <div class="status-label mt-2">Offline Nodes</div>
-                    <div class="status-value" id="offline-nodes">0</div>
+                    <div class="status-value" id="offline-nodes">${clusterStats.offlineNodes}</div>
                   </div>
                 </div>
               </div>
@@ -1085,9 +1085,7 @@ export class DashboardView {
    * @param {Array} nodes - Nodes
    */
   initializeCharts(nodes) {
-    if (nodes.length === 0) return;
-    
-    // Set default values
+    // Always set default values, regardless of whether nodes exist
     document.getElementById('cpu-usage-percentage').textContent = '0%';
     document.getElementById('memory-usage-percentage').textContent = '0%';
     document.getElementById('disk-usage-percentage').textContent = '0%';
@@ -1096,9 +1094,8 @@ export class DashboardView {
     document.getElementById('disk-usage-label').textContent = '0 GB / 0 GB';
     document.getElementById('network-in').textContent = '0 MB/s';
     document.getElementById('network-out').textContent = '0 MB/s';
-    document.getElementById('online-nodes').textContent = '0';
-    document.getElementById('warning-nodes').textContent = '0';
-    document.getElementById('offline-nodes').textContent = '0';
+    
+    if (nodes.length === 0) return;
     
     // Only initialize with actual node data
     setTimeout(() => {

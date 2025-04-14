@@ -1,47 +1,247 @@
 /**
- * Chart.js Global Configuration
- * Sets default styles for all charts to match our dark theme
+ * Chart.js Configuration
+ * Sets default chart styles and provides helper functions
  */
 
-// Configure Chart.js defaults for dark theme
+// Configure Chart.js defaults
+configureChartDefaults();
+
+/**
+ * Configure Chart.js defaults
+ */
 function configureChartDefaults() {
   if (window.Chart) {
-    // Set global defaults for all charts
-    Chart.defaults.color = 'rgb(200, 200, 200)';
-    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
-    Chart.defaults.backgroundColor = 'rgba(18, 18, 18, 0.7)';
+    Chart.defaults.color = '#6c757d';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    Chart.defaults.elements.line.borderWidth = 2;
+    Chart.defaults.elements.line.tension = 0.2;
+    Chart.defaults.elements.point.radius = 3;
+    Chart.defaults.elements.point.hoverRadius = 5;
     
-    // Configure tooltips
-    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(42, 42, 42, 0.9)';
-    Chart.defaults.plugins.tooltip.titleColor = 'rgb(240, 240, 240)';
-    Chart.defaults.plugins.tooltip.bodyColor = 'rgb(240, 240, 240)';
-    Chart.defaults.plugins.tooltip.borderColor = '#8257e6';
-    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    Chart.defaults.plugins.tooltip.titleFont = { weight: 'bold' };
     Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.cornerRadius = 6;
-    
-    // Configure legend
-    Chart.defaults.plugins.legend.labels.color = 'rgb(240, 240, 240)';
-    
-    // We need to check if these properties exist before setting them
-    if (Chart.defaults.scales) {
-      // Grid line settings
-      if (Chart.defaults.scales.x) {
-        Chart.defaults.scales.x.grid.color = 'rgba(255, 255, 255, 0.1)';
-        Chart.defaults.scales.x.ticks.color = 'rgb(200, 200, 200)';
-      }
-      
-      if (Chart.defaults.scales.y) {
-        Chart.defaults.scales.y.grid.color = 'rgba(255, 255, 255, 0.1)';
-        Chart.defaults.scales.y.ticks.color = 'rgb(200, 200, 200)';
-      }
-    }
+    Chart.defaults.plugins.tooltip.displayColors = true;
     
     console.log('Chart.js configured with dark theme defaults');
-  } else {
-    console.warn('Chart.js not found - skipping default configuration');
   }
 }
 
-// Call this function when the document is ready
-document.addEventListener('DOMContentLoaded', configureChartDefaults);
+/**
+ * Create a CPU usage line chart
+ * @param {string} canvasId - Canvas element ID
+ * @param {Array} data - Chart data (array of values)
+ * @param {Array} labels - Chart labels (array of strings)
+ * @returns {Chart} Chart instance
+ */
+export function createCPUChart(canvasId, data, labels) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'CPU Usage (%)',
+        data: data,
+        backgroundColor: 'rgba(0, 102, 204, 0.1)',
+        borderColor: '#0066cc',
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: {
+            callback: function(value) {
+              return value + '%';
+            }
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': ' + context.parsed.y + '%';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Create a memory usage line chart
+ * @param {string} canvasId - Canvas element ID
+ * @param {Array} data - Chart data (array of values in bytes)
+ * @param {Array} labels - Chart labels (array of strings)
+ * @param {number} totalMemory - Total memory in bytes (for max scale)
+ * @returns {Chart} Chart instance
+ */
+export function createMemoryChart(canvasId, data, labels, totalMemory) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Memory Usage',
+        data: data,
+        backgroundColor: 'rgba(23, 162, 184, 0.1)',
+        borderColor: '#17a2b8',
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: totalMemory || undefined,
+          ticks: {
+            callback: function(value) {
+              return formatBytes(value, 1);
+            }
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': ' + formatBytes(context.parsed.y, 2);
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Create a network traffic line chart
+ * @param {string} canvasId - Canvas element ID
+ * @param {Array} inboundData - Inbound data (array of values in bytes)
+ * @param {Array} outboundData - Outbound data (array of values in bytes)
+ * @param {Array} labels - Chart labels (array of strings)
+ * @returns {Chart} Chart instance
+ */
+export function createNetworkChart(canvasId, inboundData, outboundData, labels) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Inbound',
+          data: inboundData,
+          backgroundColor: 'rgba(40, 167, 69, 0.1)',
+          borderColor: '#28a745',
+          fill: true,
+        },
+        {
+          label: 'Outbound',
+          data: outboundData,
+          backgroundColor: 'rgba(220, 53, 69, 0.1)',
+          borderColor: '#dc3545',
+          fill: true,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              return formatBytes(value, 1) + '/s';
+            }
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': ' + formatBytes(context.parsed.y, 2) + '/s';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Create a pie chart
+ * @param {string} canvasId - Canvas element ID
+ * @param {Array} data - Chart data (array of values)
+ * @param {Array} labels - Chart labels (array of strings)
+ * @param {Array} colors - Chart colors (array of strings)
+ * @returns {Chart} Chart instance
+ */
+export function createPieChart(canvasId, data, labels, colors) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  
+  return new Chart(canvas, {
+    type: 'pie',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: colors || [
+          '#0066cc',
+          '#17a2b8',
+          '#28a745',
+          '#ffc107',
+          '#dc3545',
+          '#6c757d'
+        ],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right'
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Format bytes to human-readable size
+ * @param {number} bytes - Bytes
+ * @param {number} decimals - Decimal places
+ * @returns {string} Formatted size
+ */
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}

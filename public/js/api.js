@@ -4,7 +4,7 @@
  */
 export class API {
   constructor() {
-    this.baseUrl = ''; // Empty for relative paths
+    this.baseUrl = '/api';
   }
   
   /**
@@ -14,68 +14,26 @@ export class API {
    * @returns {Promise<Object>} Response data
    */
   async request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`;
-    
-    // Default options
-    const defaultOptions = {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'same-origin' // Include cookies for session auth
-    };
-    
-    // Merge options
-    const fetchOptions = { ...defaultOptions, ...options };
-    
-    // Add body if present
-    if (options.body) {
-      fetchOptions.body = JSON.stringify(options.body);
-    }
-    
-    console.log(`API Request: ${options.method || 'GET'} ${url}`);
-    
     try {
-      // Add retry logic for better stability
-      let retries = 2;
-      let response;
+      console.log(`API Request: ${options.method || 'GET'} ${endpoint}`);
       
-      while (retries >= 0) {
-        try {
-          response = await fetch(url, fetchOptions);
-          break;
-        } catch (fetchError) {
-          if (retries <= 0) throw fetchError;
-          console.warn(`Retrying API request to ${url}, attempts remaining: ${retries}`);
-          retries--;
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        ...options,
+      });
       
-      // Handle non-OK responses
-      if (!response.ok) {
-        let errorMessage = `HTTP Error: ${response.status}`;
-        
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          // If we can't parse the error as JSON, just use the status text
-          errorMessage = `${errorMessage} ${response.statusText}`;
-        }
-        
-        const error = new Error(errorMessage);
-        error.status = response.status;
-        throw error;
-      }
-      
-      // Parse JSON response
       const data = await response.json();
-      console.log(`API Response from ${url}:`, data);
+      console.log(`API Response from ${endpoint}:`, data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `API error: ${response.status}`);
+      }
+      
       return data;
     } catch (error) {
-      console.error(`API Error (${url}):`, error);
+      console.error(`API Error (${endpoint}):`, error);
       throw error;
     }
   }
@@ -85,7 +43,7 @@ export class API {
    * @returns {Promise<Object>} Status data
    */
   async getStatus() {
-    return this.request('/api/status');
+    return this.request('/status');
   }
   
   /**
@@ -95,9 +53,9 @@ export class API {
    * @returns {Promise<Object>} User data
    */
   async login(username, password) {
-    return this.request('/api/login', {
+    return this.request('/login', {
       method: 'POST',
-      body: { username, password }
+      body: JSON.stringify({ username, password }),
     });
   }
   
@@ -106,7 +64,7 @@ export class API {
    * @returns {Promise<Object>} User data
    */
   async getCurrentUser() {
-    return this.request('/api/user');
+    return this.request('/user');
   }
   
   /**
@@ -115,9 +73,9 @@ export class API {
    * @returns {Promise<Object>} Updated user data
    */
   async updateUserSettings(userData) {
-    return this.request('/api/user', {
+    return this.request('/user', {
       method: 'PUT',
-      body: userData
+      body: JSON.stringify(userData),
     });
   }
   
@@ -126,8 +84,8 @@ export class API {
    * @returns {Promise<Object>} Logout status
    */
   async logout() {
-    return this.request('/api/logout', {
-      method: 'POST'
+    return this.request('/logout', {
+      method: 'POST',
     });
   }
   
@@ -136,7 +94,7 @@ export class API {
    * @returns {Promise<Array>} Nodes array
    */
   async getNodes() {
-    return this.request('/api/nodes');
+    return this.request('/nodes');
   }
   
   /**
@@ -145,9 +103,9 @@ export class API {
    * @returns {Promise<Object>} Created node
    */
   async addNode(nodeData) {
-    return this.request('/api/nodes', {
+    return this.request('/nodes', {
       method: 'POST',
-      body: nodeData
+      body: JSON.stringify(nodeData),
     });
   }
   
@@ -157,8 +115,8 @@ export class API {
    * @returns {Promise<Object>} Status
    */
   async deleteNode(nodeId) {
-    return this.request(`/api/nodes/${nodeId}`, {
-      method: 'DELETE'
+    return this.request(`/nodes/${nodeId}`, {
+      method: 'DELETE',
     });
   }
   
@@ -168,7 +126,7 @@ export class API {
    * @returns {Promise<Object>} Node details
    */
   async getNodeDetails(nodeId) {
-    return this.request(`/api/nodes/${nodeId}`);
+    return this.request(`/nodes/${nodeId}`);
   }
   
   /**
@@ -177,19 +135,20 @@ export class API {
    * @returns {Promise<Array>} VMs array
    */
   async getNodeVMs(nodeId) {
-    return this.request(`/api/nodes/${nodeId}/vms`);
+    return this.request(`/nodes/${nodeId}/qemu`);
   }
   
   /**
    * Perform action on a VM (start, stop, restart)
    * @param {number} nodeId - Node ID
-   * @param {number} vmId - VM ID
+   * @param {string} vmId - VM ID
    * @param {string} action - Action to perform (start, stop, restart)
    * @returns {Promise<Object>} Action result
    */
   async performVMAction(nodeId, vmId, action) {
-    return this.request(`/api/nodes/${nodeId}/vms/${vmId}/${action}`, {
-      method: 'POST'
+    return this.request(`/nodes/${nodeId}/qemu/${vmId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
     });
   }
   
@@ -199,19 +158,20 @@ export class API {
    * @returns {Promise<Array>} Containers array
    */
   async getNodeContainers(nodeId) {
-    return this.request(`/api/nodes/${nodeId}/containers`);
+    return this.request(`/nodes/${nodeId}/lxc`);
   }
   
   /**
    * Perform action on a container (start, stop, restart)
    * @param {number} nodeId - Node ID
-   * @param {number} containerId - Container ID
+   * @param {string} containerId - Container ID
    * @param {string} action - Action to perform (start, stop, restart)
    * @returns {Promise<Object>} Action result
    */
   async performContainerAction(nodeId, containerId, action) {
-    return this.request(`/api/nodes/${nodeId}/containers/${containerId}/${action}`, {
-      method: 'POST'
+    return this.request(`/nodes/${nodeId}/lxc/${containerId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
     });
   }
   
@@ -220,7 +180,7 @@ export class API {
    * @returns {Promise<Object>} Dashboard data
    */
   async getDashboardData() {
-    return this.request('/api/dashboard');
+    return this.request('/dashboard');
   }
   
   /**
@@ -228,7 +188,7 @@ export class API {
    * @returns {Promise<Object>} VMs data
    */
   async getVMs() {
-    return this.request('/api/vms');
+    return this.request('/vms');
   }
   
   /**
@@ -236,7 +196,7 @@ export class API {
    * @returns {Promise<Object>} Containers data
    */
   async getContainers() {
-    return this.request('/api/containers');
+    return this.request('/containers');
   }
   
   /**
@@ -245,31 +205,10 @@ export class API {
    * @returns {Promise<Object>} Connection test results
    */
   async testConnection(connectionData) {
-    return this.request('/api/test-connection', {
+    return this.request('/nodes/test-connection', {
       method: 'POST',
-      body: connectionData
+      body: JSON.stringify(connectionData),
     });
-  }
-  
-  /**
-   * Test SSH connection to a node
-   * @param {Object} sshData - SSH settings
-   * @returns {Promise<Object>} SSH test results
-   */
-  async testSSH(sshData) {
-    return this.request('/api/test-ssh', {
-      method: 'POST',
-      body: sshData
-    });
-  }
-  
-  /**
-   * Get node monitoring data
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Monitoring data
-   */
-  async getNodeMonitoring(nodeId) {
-    return this.request(`/api/monitoring/node/${nodeId}`);
   }
   
   /**
@@ -277,7 +216,19 @@ export class API {
    * @returns {Promise<Array>} VM templates
    */
   async getVMTemplates() {
-    return this.request('/api/templates/vm');
+    return this.request('/templates/vm');
+  }
+  
+  /**
+   * Add VM template
+   * @param {Object} templateData - Template data
+   * @returns {Promise<Object>} Created template
+   */
+  async addVMTemplate(templateData) {
+    return this.request('/templates/vm', {
+      method: 'POST',
+      body: JSON.stringify(templateData),
+    });
   }
   
   /**
@@ -285,24 +236,18 @@ export class API {
    * @returns {Promise<Array>} LXC templates
    */
   async getLXCTemplates() {
-    return this.request('/api/templates/lxc');
+    return this.request('/templates/lxc');
   }
   
   /**
-   * Get node storage
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Storage data
+   * Add LXC template
+   * @param {Object} templateData - Template data
+   * @returns {Promise<Object>} Created template
    */
-  async getNodeStorage(nodeId) {
-    return this.request(`/api/nodes/${nodeId}/storage`);
-  }
-  
-  /**
-   * Get node network
-   * @param {number} nodeId - Node ID
-   * @returns {Promise<Object>} Network data
-   */
-  async getNodeNetwork(nodeId) {
-    return this.request(`/api/nodes/${nodeId}/network`);
+  async addLXCTemplate(templateData) {
+    return this.request('/templates/lxc', {
+      method: 'POST',
+      body: JSON.stringify(templateData),
+    });
   }
 }

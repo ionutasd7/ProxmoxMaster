@@ -1,14 +1,14 @@
 /**
- * Settings View
- * Displays application settings and user preferences
+ * Templates View
+ * Displays VM and container templates
  */
-export class SettingsView {
+export class TemplatesView {
   constructor(app) {
     this.app = app;
   }
   
   /**
-   * Render the settings view
+   * Render the templates view
    * @param {Object} params - Route parameters
    */
   render(params = {}) {
@@ -18,19 +18,19 @@ export class SettingsView {
     // Set app container with sidebar and content
     appElement.innerHTML = this.getLayoutHTML();
     
-    // Render settings content with "Coming Soon" message
+    // Render templates content with "Coming Soon" message
     const contentElement = document.getElementById('main-content');
     if (contentElement) {
       contentElement.innerHTML = `
         <div class="mb-4">
-          <h2>Settings</h2>
+          <h2>Templates</h2>
         </div>
         
         <div class="card">
           <div class="card-body text-center py-5">
             <i class="fas fa-clock fa-4x mb-3 text-muted"></i>
             <h3>Coming Soon</h3>
-            <p class="text-muted">Settings features are under development and will be available soon.</p>
+            <p class="text-muted">Template management features are under development and will be available soon.</p>
             <button id="back-btn" class="btn btn-primary mt-3">
               <i class="fas fa-arrow-left me-2"></i> Back to Dashboard
             </button>
@@ -51,7 +51,7 @@ export class SettingsView {
     this.addEventListeners();
     
     // Set active navigation item
-    this.setActiveNavItem('settings');
+    this.setActiveNavItem('templates');
   }
   
   /**
@@ -125,7 +125,7 @@ export class SettingsView {
         <!-- Main Content -->
         <div class="content">
           <div class="container-fluid" id="main-content">
-            <!-- Settings content will be rendered here -->
+            <!-- Templates content will be rendered here -->
           </div>
         </div>
       </div>

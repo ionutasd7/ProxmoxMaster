@@ -5,60 +5,24 @@
 export class Router {
   constructor(app) {
     this.app = app;
-    this.currentRoute = null;
-    
-    // Initialize routes
-    this.routes = {
-      'auth': () => this.app.views.auth.render(),
-      'dashboard': () => {
-        this.app.loadAppData();
-        this.app.views.dashboard.render();
-      },
-      'nodes': () => {
-        this.app.loadAppData();
-        this.app.views.nodes.render();
-      },
-      'vms': () => {
-        this.app.loadAppData();
-        this.app.views.vms.render();
-      },
-      'containers': () => {
-        this.app.loadAppData();
-        this.app.views.containers.render();
-      },
-      'storage': () => {
-        this.app.loadAppData();
-        this.app.views.storage.render();
-      },
-      'network': () => {
-        this.app.loadAppData();
-        this.app.views.network.render();
-      },
-      'updates': () => {
-        this.app.loadAppData();
-        this.app.views.updates.render();
-      },
-      'settings': () => {
-        this.app.views.settings.render();
-      },
-      'node-details': (params) => {
-        this.app.loadAppData();
-        this.app.views.nodes.renderDetails(params.id);
-      },
-      'vm-details': (params) => {
-        this.app.loadAppData();
-        this.app.views.vms.renderDetails(params.id);
-      },
-      'container-details': (params) => {
-        this.app.loadAppData();
-        this.app.views.containers.renderDetails(params.id);
-      }
-    };
+    this.routes = [
+      'auth',
+      'dashboard',
+      'nodes',
+      'node-details',
+      'vms',
+      'vm-details',
+      'containers',
+      'container-details',
+      'storage',
+      'network',
+      'templates',
+      'updates',
+      'settings'
+    ];
     
     // Listen for URL changes
-    window.addEventListener('popstate', () => {
-      this.handleUrlChange();
-    });
+    window.addEventListener('popstate', this.handleUrlChange.bind(this));
   }
   
   /**
@@ -68,24 +32,28 @@ export class Router {
    * @param {boolean} addToHistory - Whether to add to browser history
    */
   navigate(route, params = {}, addToHistory = true) {
-    console.log(`Navigating to route: ${route}`, params);
+    console.log('Navigating to route:', route, params);
     
-    // Update current route
-    this.currentRoute = { name: route, params };
+    // Validate route
+    if (!this.routes.includes(route)) {
+      console.error(`Invalid route: ${route}`);
+      route = 'dashboard';
+    }
     
-    // Update URL if needed
+    // Add to browser history
     if (addToHistory) {
-      let url = `#/${route}`;
+      const url = new URL(window.location.href);
+      url.searchParams.set('route', route);
       
       // Add params to URL
-      if (Object.keys(params).length > 0) {
-        const queryParams = Object.entries(params)
-          .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-          .join('&');
-        url += `?${queryParams}`;
-      }
+      Object.keys(params).forEach(key => {
+        url.searchParams.set(key, params[key]);
+      });
       
-      window.history.pushState(null, '', url);
+      window.history.pushState({
+        route,
+        params,
+      }, '', url.toString());
     }
     
     // Render the route
@@ -98,24 +66,25 @@ export class Router {
    * @param {Object} params - Route parameters
    */
   renderRoute(route, params = {}) {
-    // Check if route exists
-    if (this.routes[route]) {
-      // Remove active class from all nav links
-      document.querySelectorAll('.nav-link').forEach(link => {
-        link.classList.remove('active');
-      });
-      
-      // Add active class to current route nav link
-      const currentNavLink = document.querySelector(`.nav-link[data-route="${route}"]`);
-      if (currentNavLink) {
-        currentNavLink.classList.add('active');
+    // Clear main content
+    const appElement = document.getElementById('app');
+    
+    // Delegate rendering to the appropriate view
+    if (route === 'auth') {
+      if (this.app.views.auth) {
+        this.app.views.auth.render();
       }
-      
-      // Render route
-      this.routes[route](params);
+    } else if (this.app.views[route]) {
+      // Check if we need to render a detail view
+      if (route.endsWith('-details') && this.app.views[route.split('-')[0]]) {
+        // For detail views, render via parent view
+        this.app.views[route.split('-')[0]].renderDetails(params);
+      } else {
+        // Render regular view
+        this.app.views[route].render(params);
+      }
     } else {
-      console.error(`Route not found: ${route}`);
-      this.navigate('dashboard');
+      console.error(`No view found for route: ${route}`);
     }
   }
   
@@ -123,28 +92,18 @@ export class Router {
    * Handle URL change (when back/forward buttons are clicked)
    */
   handleUrlChange() {
-    const hash = window.location.hash.substring(1); // Remove # symbol
+    const url = new URL(window.location.href);
+    const route = url.searchParams.get('route') || 'dashboard';
     
-    if (!hash || hash === '/') {
-      // Default route
-      this.navigate('auth', {}, false);
-      return;
-    }
-    
-    // Parse route and params
-    const [path, queryString] = hash.split('?');
-    const routeName = path.substring(1); // Remove leading /
-    
-    // Parse query params
+    // Extract parameters from URL
     const params = {};
-    if (queryString) {
-      queryString.split('&').forEach(param => {
-        const [key, value] = param.split('=');
-        params[decodeURIComponent(key)] = decodeURIComponent(value);
-      });
-    }
+    url.searchParams.forEach((value, key) => {
+      if (key !== 'route') {
+        params[key] = value;
+      }
+    });
     
-    // Navigate to route without adding to history
-    this.navigate(routeName, params, false);
+    // Navigate to the route without adding to history
+    this.navigate(route, params, false);
   }
 }

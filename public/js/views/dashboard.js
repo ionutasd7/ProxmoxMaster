@@ -1,261 +1,273 @@
 /**
  * Dashboard View
- * Displays the cluster dashboard with resource monitoring and overview
+ * Displays cluster overview, resource usage, and server status
  */
+import { formatBytes, formatUptime, calculatePercentage, cpuToPercentage } from '../utils.js';
+import * as Charts from '../chartConfig.js';
+
 export class DashboardView {
   constructor(app) {
     this.app = app;
-    this.charts = {};
+    
+    // Charts
+    this.cpuChart = null;
+    this.memoryChart = null;
+    this.storageChart = null;
+    this.networkChart = null;
+    
+    // Refresh interval
+    this.refreshInterval = null;
+    this.refreshRate = 30000; // 30 seconds
   }
   
   /**
    * Render the dashboard view
    */
-  async render() {
-    // Create main layout
-    const mainContent = this.app.ui.createLayout();
+  render() {
+    const appElement = document.getElementById('app');
+    if (!appElement) return;
     
-    // Show loading indicator
-    mainContent.innerHTML = `
-      <div class="text-center mt-5">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">Loading...</span>
+    // Set app container with sidebar and content
+    appElement.innerHTML = this.getLayoutHTML();
+    
+    // Render dashboard content
+    this.renderDashboardContent();
+    
+    // Add event listeners
+    this.addEventListeners();
+    
+    // Set active navigation item
+    this.setActiveNavItem('dashboard');
+    
+    // Start auto-refresh
+    this.startAutoRefresh();
+  }
+  
+  /**
+   * Get the layout HTML with sidebar and content container
+   * @returns {string} Layout HTML
+   */
+  getLayoutHTML() {
+    const { user } = this.app.state.getState();
+    
+    return `
+      <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+          <div class="sidebar-header">
+            <h4>Proxmox Manager</h4>
+            <p class="text-muted mb-0">${user ? user.username : 'Guest'}</p>
+          </div>
+          
+          <div class="sidebar-sticky">
+            <ul class="nav flex-column">
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="dashboard">
+                  <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="nodes">
+                  <i class="fas fa-server"></i> Nodes
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="vms">
+                  <i class="fas fa-desktop"></i> Virtual Machines
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="containers">
+                  <i class="fas fa-box"></i> Containers
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="storage">
+                  <i class="fas fa-hdd"></i> Storage
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="network">
+                  <i class="fas fa-network-wired"></i> Network
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="templates">
+                  <i class="fas fa-copy"></i> Templates
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-route="settings">
+                  <i class="fas fa-cog"></i> Settings
+                </a>
+              </li>
+            </ul>
+          </div>
+          
+          <div class="sidebar-footer">
+            <button class="btn btn-outline-light w-100" id="logout-btn">
+              <i class="fas fa-sign-out-alt me-2"></i> Logout
+            </button>
+          </div>
         </div>
-        <p class="mt-2">Loading dashboard data...</p>
+        
+        <!-- Main Content -->
+        <div class="content">
+          <div class="container-fluid" id="main-content">
+            <!-- Dashboard content will be rendered here -->
+          </div>
+        </div>
       </div>
     `;
+  }
+  
+  /**
+   * Render the dashboard content
+   */
+  async renderDashboardContent() {
+    const contentElement = document.getElementById('main-content');
+    if (!contentElement) return;
     
-    // Set as main content
-    this.app.ui.setContent(mainContent);
+    // Show loading state
+    contentElement.innerHTML = `<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-2">Loading dashboard data...</p></div>`;
     
     try {
-      // Import dashboardState for data persistence
-      let dashboardState;
-      try {
-        const module = await import('../dashboard-state.js');
-        dashboardState = module.dashboardState;
-      } catch (stateErr) {
-        console.warn('Could not import dashboard state module:', stateErr);
-      }
-      
-      // First get state data with the current nodes
-      const { nodes } = this.app.state.getState();
-      
-      // Fetch dashboard data from API - This returns the consolidated data from the server
+      // Fetch dashboard data
       const dashboardData = await this.fetchDashboardData();
-      console.log('Dashboard data loaded successfully');
+      const { cluster } = dashboardData;
       
-      // Apply data persistence if dashboard state module is available
-      // This helps preserve non-zero values from previous API calls
-      if (dashboardState && dashboardData.success) {
-        // Log preserved data to console
-        console.log('Applying dashboard state preservation...');
-      }
+      // Get state data
+      const { nodes, vms, containers } = this.app.state.getState();
       
-      // Extract data from the API response with fallbacks
-      const clusterStats = dashboardData?.cluster?.stats || {
-        totalNodes: nodes?.length || 0,
-        onlineNodes: 0,
-        warningNodes: 0,
-        offlineNodes: 0,
-        totalVMs: 0,
-        runningVMs: 0,
-        totalContainers: 0,
-        runningContainers: 0
-      };
-      
-      const networkUsage = dashboardData?.cluster?.networkUsage || {
-        inbound: 0,
-        outbound: 0
-      };
-      
-      // Use API node details or fallback to state
-      const nodeDetails = dashboardData?.cluster?.nodes || nodes || [];
-      
-      // Format network values
-      const inboundMBs = this.formatNetworkValue(networkUsage.inbound);
-      const outboundMBs = this.formatNetworkValue(networkUsage.outbound);
-      
-      // Set main content
-      mainContent.innerHTML = `
-        ${this.app.ui.createPageHeader('Cluster Dashboard', 'chart-line')}
+      // Render content
+      contentElement.innerHTML = `
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+          <h2 class="mb-0">Dashboard</h2>
+          <button id="refresh-btn" class="btn btn-primary">
+            <i class="fas fa-sync-alt me-2"></i> Refresh Data
+          </button>
+        </div>
         
-        <!-- Stats Cards Row -->
-        <div class="row">
-          <div class="col-md-3">
-            <div class="card stat-card stat-primary mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">${clusterStats.totalNodes}</div>
-                    <div class="stat-label">Proxmox Nodes</div>
+        <!-- Statistics Cards -->
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-4 mb-4">
+          ${this.getStatisticsCardsHTML(cluster)}
+        </div>
+        
+        <!-- Resource Usage -->
+        <div class="row g-4 mb-4">
+          <!-- CPU, Memory, Disk Usage -->
+          <div class="col-md-6">
+            <div class="custom-card h-100">
+              <div class="card-header">
+                <h5><i class="fas fa-microchip me-2"></i> Resource Usage</h5>
+              </div>
+              <div class="card-body">
+                ${this.getResourceUsageHTML(cluster.stats)}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Cluster Status -->
+          <div class="col-md-6">
+            <div class="custom-card h-100">
+              <div class="card-header">
+                <h5><i class="fas fa-server me-2"></i> Cluster Status</h5>
+              </div>
+              <div class="card-body">
+                ${this.getClusterStatusHTML(cluster.stats)}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Charts -->
+        <div class="row g-4 mb-4">
+          <!-- Network Traffic Chart -->
+          <div class="col-md-6">
+            <div class="custom-card h-100">
+              <div class="card-header">
+                <h5><i class="fas fa-network-wired me-2"></i> Network Traffic</h5>
+              </div>
+              <div class="card-body">
+                <div class="network-traffic-info mb-3">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <i class="fas fa-arrow-down text-success me-1"></i> Inbound: 
+                      <span id="network-in">Calculating...</span>
+                    </div>
+                    <div>
+                      <i class="fas fa-arrow-up text-danger me-1"></i> Outbound: 
+                      <span id="network-out">Calculating...</span>
+                    </div>
                   </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-server"></i>
-                  </div>
+                </div>
+                <div style="height: 300px;">
+                  <canvas id="network-chart"></canvas>
                 </div>
               </div>
             </div>
           </div>
           
-          <div class="col-md-3">
-            <div class="card stat-card stat-success mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">${clusterStats.totalVMs}</div>
-                    <div class="stat-label">Virtual Machines</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-desktop"></i>
-                  </div>
-                </div>
+          <!-- Distribution Chart -->
+          <div class="col-md-6">
+            <div class="custom-card h-100">
+              <div class="card-header">
+                <h5><i class="fas fa-chart-pie me-2"></i> VM/CT Distribution</h5>
               </div>
-            </div>
-          </div>
-          
-          <div class="col-md-3">
-            <div class="card stat-card stat-warning mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">${clusterStats.totalContainers}</div>
-                    <div class="stat-label">LXC Containers</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-box"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="col-md-3">
-            <div class="card stat-card stat-danger mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value" id="active-vms">${clusterStats.runningVMs}</div>
-                    <div class="stat-label">Running VMs</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-play-circle"></i>
-                  </div>
+              <div class="card-body">
+                <div style="height: 300px;">
+                  <canvas id="distribution-chart"></canvas>
                 </div>
               </div>
             </div>
           </div>
         </div>
         
-        <!-- Cluster Monitoring -->
-        ${this.getClusterMonitoringHTML(nodes, clusterStats, networkUsage)}
-        
-        <!-- Node Status Cards -->
-        <div class="row">
-          ${this.getNodeStatusCardsHTML(nodeDetails)}
+        <!-- Servers Overview -->
+        <div class="custom-card mb-4">
+          <div class="card-header">
+            <h5><i class="fas fa-server me-2"></i> Servers Overview</h5>
+          </div>
+          <div class="card-body">
+            ${this.getServersOverviewHTML(cluster.nodes)}
+          </div>
         </div>
         
-        <!-- Recent Events Card -->
-        <div class="row">
-          <div class="col-md-12">
-            ${this.getRecentEventsHTML()}
+        <!-- Recent Activity -->
+        <div class="custom-card">
+          <div class="card-header">
+            <h5><i class="fas fa-history me-2"></i> Recent Activity</h5>
+          </div>
+          <div class="card-body">
+            ${this.getRecentActivityHTML()}
           </div>
         </div>
       `;
-      
-      // Add event listeners
-      this.addEventListeners();
-      
-      // Initialize charts
-      this.initializeCharts(nodes, clusterStats);
       
       // Update dashboard components with real data
-      this.updateDashboardComponents(clusterStats, networkUsage);
-    } catch (error) {
-      console.error('Error rendering dashboard:', error);
+      this.updateDashboardComponents(cluster.stats, cluster.networkUsage);
       
-      // Show error message
-      mainContent.innerHTML = `
-        ${this.app.ui.createPageHeader('Cluster Dashboard', 'chart-line')}
-        <div class="alert alert-danger">
-          <i class="fas fa-exclamation-triangle me-2"></i> Failed to load dashboard data: ${error.message}
-        </div>
-        
-        <!-- Stats Cards Row (with default values) -->
-        <div class="row">
-          <div class="col-md-3">
-            <div class="card stat-card stat-primary mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">0</div>
-                    <div class="stat-label">Proxmox Nodes</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-server"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="col-md-3">
-            <div class="card stat-card stat-success mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">0</div>
-                    <div class="stat-label">Virtual Machines</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-desktop"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="col-md-3">
-            <div class="card stat-card stat-warning mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value">0</div>
-                    <div class="stat-label">LXC Containers</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-box"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="col-md-3">
-            <div class="card stat-card stat-danger mb-4">
-              <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div class="stat-value" id="active-vms">0</div>
-                    <div class="stat-label">Running VMs</div>
-                  </div>
-                  <div class="stat-icon">
-                    <i class="fas fa-play-circle"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Cluster Monitoring -->
-        ${this.getClusterMonitoringHTML(nodes)}
-        
-        <!-- Node Status Cards -->
-        <div class="row">
-          ${this.getNodeStatusCardsHTML(nodes)}
+      // Initialize charts
+      this.initializeCharts(cluster);
+      
+    } catch (error) {
+      console.error('Error rendering dashboard content:', error);
+      contentElement.innerHTML = `
+        <div class="alert alert-danger mt-4">
+          <h4 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i> Error</h4>
+          <p>Failed to load dashboard data: ${error.message || 'Unknown error'}</p>
+          <hr>
+          <button id="retry-btn" class="btn btn-danger">Retry</button>
         </div>
       `;
+      
+      // Add retry button event listener
+      const retryBtn = document.getElementById('retry-btn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', () => {
+          this.renderDashboardContent();
+        });
+      }
     }
   }
   
@@ -267,108 +279,355 @@ export class DashboardView {
     try {
       // Fetch fresh data from API
       const response = await this.app.api.getDashboardData();
-      console.log('Dashboard data:', response);
       
-      // Define fallback data structure in case we get an error
-      const fallbackData = {
-        success: true,
-        cluster: {
-          nodes: [],
-          stats: {
-            totalNodes: 0,
-            onlineNodes: 0,
-            warningNodes: 0,
-            offlineNodes: 0,
-            totalVMs: 0,
-            runningVMs: 0,
-            totalContainers: 0,
-            runningContainers: 0,
-            totalCPUs: 0,
-            cpuUsage: 0,
-            totalMemory: 0,
-            usedMemory: 0,
-            totalStorage: 0,
-            usedStorage: 0
-          },
-          networkUsage: {
-            inbound: 0,
-            outbound: 0
-          }
-        }
-      };
-      
-      // If response is invalid, return fallback
       if (!response || !response.success) {
-        console.warn('Invalid dashboard data response, using fallback');
-        return fallbackData;
+        throw new Error('Invalid dashboard data response');
       }
       
-      // Try to get the dashboard state, but don't throw if it fails
-      let preservedData = null;
-      
-      try {
-        // Import directly without using dynamic import
-        if (window.dashboardState) {
-          preservedData = window.dashboardState.updateData(response);
-          console.log('Dashboard data after state management:', preservedData);
-        } else {
-          console.log('Dashboard state not available in window, using direct response');
-        }
-      } catch (stateError) {
-        console.warn('Failed to use dashboard state module:', stateError);
+      // Update dashboard state
+      if (window.dashboardState) {
+        const preservedData = window.dashboardState.updateData(response);
+        return preservedData;
       }
       
-      // If we successfully preserved data, return it with the right structure
-      if (preservedData) {
-        return {
-          success: true,
-          cluster: preservedData.cluster
-        };
-      }
-      
-      // Return original response if we can't use the state module
       return response;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      // Return a valid fallback structure instead of throwing
-      return {
-        success: true,
-        cluster: {
-          nodes: [],
-          stats: {
-            totalNodes: 0,
-            onlineNodes: 0,
-            warningNodes: 0,
-            offlineNodes: 0,
-            totalVMs: 0,
-            runningVMs: 0,
-            totalContainers: 0,
-            runningContainers: 0,
-            totalCPUs: 0,
-            cpuUsage: 0,
-            totalMemory: 0,
-            usedMemory: 0,
-            totalStorage: 0,
-            usedStorage: 0
-          },
-          networkUsage: {
-            inbound: 0,
-            outbound: 0
-          }
-        }
-      };
+      throw error;
     }
   }
   
   /**
-   * Format network value to human-readable string
-   * @param {number} value - Network value in bytes
-   * @returns {string} Formatted value
+   * Get statistics cards HTML
+   * @param {Object} cluster - Cluster data
+   * @returns {string} HTML
    */
-  formatNetworkValue(value) {
-    // Convert to MB/s
-    const mbps = value / (1024 * 1024);
-    return mbps.toFixed(2);
+  getStatisticsCardsHTML(cluster) {
+    const { stats } = cluster;
+    
+    return `
+      <!-- Nodes Card -->
+      <div class="col">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="text-muted mb-2">Nodes</h6>
+                <h3 class="mb-0">${stats.totalNodes || 0}</h3>
+                <p class="mb-0">
+                  <span class="text-success">${stats.onlineNodes || 0} Online</span>
+                  ${stats.offlineNodes > 0 ? `<span class="text-danger ms-2">${stats.offlineNodes} Offline</span>` : ''}
+                </p>
+              </div>
+              <div class="rounded-circle p-3 bg-light">
+                <i class="fas fa-server fa-2x text-primary"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- VMs Card -->
+      <div class="col">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="text-muted mb-2">Virtual Machines</h6>
+                <h3 class="mb-0">${stats.totalVMs || 0}</h3>
+                <p class="mb-0">
+                  <span class="text-success">${stats.runningVMs || 0} Running</span>
+                  ${stats.totalVMs - stats.runningVMs > 0 ? `<span class="text-danger ms-2">${stats.totalVMs - stats.runningVMs} Stopped</span>` : ''}
+                </p>
+              </div>
+              <div class="rounded-circle p-3 bg-light">
+                <i class="fas fa-desktop fa-2x text-success"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Containers Card -->
+      <div class="col">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="text-muted mb-2">Containers</h6>
+                <h3 class="mb-0">${stats.totalContainers || 0}</h3>
+                <p class="mb-0">
+                  <span class="text-success">${stats.runningContainers || 0} Running</span>
+                  ${stats.totalContainers - stats.runningContainers > 0 ? `<span class="text-danger ms-2">${stats.totalContainers - stats.runningContainers} Stopped</span>` : ''}
+                </p>
+              </div>
+              <div class="rounded-circle p-3 bg-light">
+                <i class="fas fa-box fa-2x text-info"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Resources Card -->
+      <div class="col">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="text-muted mb-2">Resources</h6>
+                <h3 class="mb-0">${stats.totalCPUs || 0} CPUs</h3>
+                <p class="mb-0">
+                  <span>${formatBytes(stats.totalMemory || 0)} RAM</span>
+                </p>
+              </div>
+              <div class="rounded-circle p-3 bg-light">
+                <i class="fas fa-microchip fa-2x text-warning"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get resource usage HTML
+   * @param {Object} stats - Cluster stats
+   * @returns {string} HTML
+   */
+  getResourceUsageHTML(stats) {
+    // CPU usage
+    const cpuPercentage = cpuToPercentage(stats.cpuUsage) || 0;
+    
+    // Memory usage
+    const memoryPercentage = stats.totalMemory > 0 
+      ? calculatePercentage(stats.usedMemory, stats.totalMemory) 
+      : 0;
+      
+    const memoryLabel = stats.totalMemory > 0 
+      ? `${formatBytes(stats.usedMemory || 0)} / ${formatBytes(stats.totalMemory || 0)}`
+      : 'Calculating...';
+    
+    // Storage usage
+    const storagePercentage = stats.totalStorage > 0 
+      ? calculatePercentage(stats.usedStorage, stats.totalStorage) 
+      : 0;
+      
+    const storageLabel = stats.totalStorage > 0 
+      ? `${formatBytes(stats.usedStorage || 0)} / ${formatBytes(stats.totalStorage || 0)}`
+      : 'Calculating...';
+    
+    return `
+      <!-- CPU Usage -->
+      <div class="resource-usage">
+        <div class="resource-header">
+          <div class="resource-title">CPU Usage</div>
+          <div class="resource-value" id="cpu-usage-percentage">${cpuPercentage}%</div>
+        </div>
+        <div class="resource-bar">
+          <div class="resource-progress cpu-bar" style="width: ${cpuPercentage}%;"></div>
+        </div>
+        <div class="mt-2 text-muted small text-end" id="cpu-usage-label">${stats.totalCPUs || 0} CPUs Total</div>
+      </div>
+      
+      <!-- Memory Usage -->
+      <div class="resource-usage">
+        <div class="resource-header">
+          <div class="resource-title">Memory Usage</div>
+          <div class="resource-value" id="memory-usage-percentage">${memoryPercentage}%</div>
+        </div>
+        <div class="resource-bar">
+          <div class="resource-progress memory-bar" style="width: ${memoryPercentage}%;"></div>
+        </div>
+        <div class="mt-2 text-muted small text-end" id="memory-usage-label">${memoryLabel}</div>
+      </div>
+      
+      <!-- Disk Usage -->
+      <div class="resource-usage">
+        <div class="resource-header">
+          <div class="resource-title">Storage Usage</div>
+          <div class="resource-value" id="disk-usage-percentage">${storagePercentage}%</div>
+        </div>
+        <div class="resource-bar">
+          <div class="resource-progress disk-bar" style="width: ${storagePercentage}%;"></div>
+        </div>
+        <div class="mt-2 text-muted small text-end" id="disk-usage-label">${storageLabel}</div>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get cluster status HTML
+   * @param {Object} stats - Cluster stats
+   * @returns {string} HTML
+   */
+  getClusterStatusHTML(stats) {
+    return `
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center">
+            <div class="mb-2">
+              <i class="fas fa-check-circle fa-2x text-success"></i>
+            </div>
+            <h4 id="online-nodes">${stats.onlineNodes || 0}</h4>
+            <div class="text-muted">Online Nodes</div>
+          </div>
+        </div>
+        
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center">
+            <div class="mb-2">
+              <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
+            </div>
+            <h4 id="warning-nodes">${stats.warningNodes || 0}</h4>
+            <div class="text-muted">Warning Nodes</div>
+          </div>
+        </div>
+        
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center">
+            <div class="mb-2">
+              <i class="fas fa-times-circle fa-2x text-danger"></i>
+            </div>
+            <h4 id="offline-nodes">${stats.offlineNodes || 0}</h4>
+            <div class="text-muted">Offline Nodes</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row g-3 mt-2">
+        <div class="col-md-6">
+          <div class="border rounded p-3 text-center">
+            <div class="mb-2">
+              <i class="fas fa-desktop fa-2x text-primary"></i>
+            </div>
+            <h4>${stats.runningVMs || 0} / ${stats.totalVMs || 0}</h4>
+            <div class="text-muted">Running VMs</div>
+          </div>
+        </div>
+        
+        <div class="col-md-6">
+          <div class="border rounded p-3 text-center">
+            <div class="mb-2">
+              <i class="fas fa-box fa-2x text-info"></i>
+            </div>
+            <h4>${stats.runningContainers || 0} / ${stats.totalContainers || 0}</h4>
+            <div class="text-muted">Running Containers</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get servers overview HTML
+   * @param {Array} nodes - Cluster nodes
+   * @returns {string} HTML
+   */
+  getServersOverviewHTML(nodes) {
+    if (!nodes || nodes.length === 0) {
+      return `
+        <div class="alert alert-info mb-0">
+          <i class="fas fa-info-circle me-2"></i> No nodes found in the cluster.
+          <a href="#" data-route="nodes" class="alert-link ms-2">Add nodes</a>
+        </div>
+      `;
+    }
+    
+    return `
+      <div class="table-responsive">
+        <table class="table custom-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>VMs/CTs</th>
+              <th>Uptime</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${nodes.map(node => this.getNodeRowHTML(node)).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get node row HTML
+   * @param {Object} node - Node data
+   * @returns {string} HTML
+   */
+  getNodeRowHTML(node) {
+    // Format memory values
+    const usedMemory = node.memory?.used || 0;
+    const totalMemory = node.memory?.total || 0;
+    const memoryPercentage = totalMemory > 0 
+      ? Math.round((usedMemory / totalMemory) * 100) 
+      : 0;
+    
+    // Format CPU value
+    const cpuPercentage = cpuToPercentage(node.cpu || 0);
+    
+    // Get VMs/CTs count
+    const vmsCount = node.vms || 0;
+    const ctsCount = node.containers || 0;
+    
+    return `
+      <tr>
+        <td>
+          <a href="#" data-action="view-node" data-id="${node.id}" class="fw-bold">
+            ${node.name}
+          </a>
+        </td>
+        <td>
+          ${this.app.ui.getStatusBadge(node.status)}
+        </td>
+        <td>
+          <div class="d-flex align-items-center">
+            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+              <div class="progress-bar bg-primary" style="width: ${cpuPercentage}%"></div>
+            </div>
+            <span>${cpuPercentage}%</span>
+          </div>
+        </td>
+        <td>
+          <div class="d-flex align-items-center">
+            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+              <div class="progress-bar bg-info" style="width: ${memoryPercentage}%"></div>
+            </div>
+            <span>${memoryPercentage}%</span>
+          </div>
+          <small class="text-muted">${formatBytes(usedMemory)} / ${formatBytes(totalMemory)}</small>
+        </td>
+        <td>${vmsCount + ctsCount > 0 ? `${vmsCount} VMs, ${ctsCount} CTs` : 'None'}</td>
+        <td>${formatUptime(node.uptime || 0)}</td>
+        <td>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-primary" data-action="view-node" data-id="${node.id}">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+  
+  /**
+   * Get recent activity HTML
+   * @returns {string} HTML
+   */
+  getRecentActivityHTML() {
+    // In a real app, we would fetch activity from API
+    return `
+      <div class="alert alert-info mb-0">
+        <i class="fas fa-info-circle me-2"></i> Activity logging will be available in a future update.
+      </div>
+    `;
   }
   
   /**
@@ -380,7 +639,7 @@ export class DashboardView {
     // Update CPU usage
     const cpuPercentage = document.getElementById('cpu-usage-percentage');
     if (cpuPercentage) {
-      cpuPercentage.textContent = `${Math.round(clusterStats.cpuUsage)}%`;
+      cpuPercentage.textContent = `${Math.round(cpuToPercentage(clusterStats.cpuUsage))}%`;
     }
     
     const cpuLabel = document.getElementById('cpu-usage-label');
@@ -399,8 +658,8 @@ export class DashboardView {
     
     const memoryLabel = document.getElementById('memory-usage-label');
     if (memoryLabel) {
-      const totalGB = this.formatBytes(clusterStats.totalMemory);
-      const usedGB = this.formatBytes(clusterStats.usedMemory);
+      const totalGB = formatBytes(clusterStats.totalMemory);
+      const usedGB = formatBytes(clusterStats.usedMemory);
       memoryLabel.textContent = `${usedGB} / ${totalGB}`;
     }
     
@@ -415,1283 +674,201 @@ export class DashboardView {
     
     const diskLabel = document.getElementById('disk-usage-label');
     if (diskLabel) {
-      const totalGB = this.formatBytes(clusterStats.totalStorage);
-      const usedGB = this.formatBytes(clusterStats.usedStorage);
+      const totalGB = formatBytes(clusterStats.totalStorage);
+      const usedGB = formatBytes(clusterStats.usedStorage);
       diskLabel.textContent = `${usedGB} / ${totalGB}`;
     }
     
     // Update network usage
     const networkIn = document.getElementById('network-in');
     if (networkIn) {
-      networkIn.textContent = `${this.formatNetworkValue(networkUsage.inbound)} MB/s`;
+      networkIn.textContent = `${formatBytes(networkUsage.inbound || 0)}/s`;
     }
     
     const networkOut = document.getElementById('network-out');
     if (networkOut) {
-      networkOut.textContent = `${this.formatNetworkValue(networkUsage.outbound)} MB/s`;
+      networkOut.textContent = `${formatBytes(networkUsage.outbound || 0)}/s`;
     }
     
     // Update cluster status
     const onlineNodes = document.getElementById('online-nodes');
     if (onlineNodes) {
-      onlineNodes.textContent = clusterStats.onlineNodes;
+      onlineNodes.textContent = clusterStats.onlineNodes || 0;
     }
     
     const warningNodes = document.getElementById('warning-nodes');
     if (warningNodes) {
-      warningNodes.textContent = clusterStats.warningNodes;
+      warningNodes.textContent = clusterStats.warningNodes || 0;
     }
     
     const offlineNodes = document.getElementById('offline-nodes');
     if (offlineNodes) {
-      offlineNodes.textContent = clusterStats.offlineNodes;
+      offlineNodes.textContent = clusterStats.offlineNodes || 0;
     }
   }
   
   /**
-   * Get stats overview HTML
-   * @param {Array} nodes - Nodes
-   * @param {Array} vms - VMs
-   * @param {Array} containers - Containers
-   * @returns {string} Stats HTML
+   * Initialize charts
+   * @param {Object} cluster - Cluster data
    */
-  getStatsHTML(nodes, vms, containers) {
-    return `
-      <div class="stat-card">
-        <div class="stat-header">
-          <div class="stat-title">Nodes</div>
-          <div class="stat-icon">
-            <i class="fas fa-server"></i>
-          </div>
-        </div>
-        <div class="stat-value">${nodes?.length || 0}</div>
-        <div class="stat-subtitle">Proxmox servers</div>
-      </div>
+  initializeCharts(cluster) {
+    // Network traffic chart
+    if (document.getElementById('network-chart')) {
+      // Example data for last 12 hours
+      const hours = Array.from({ length: 12 }, (_, i) => `${i + 1}h ago`).reverse();
+      const inboundData = Array.from({ length: 12 }, () => Math.floor(Math.random() * 5 * 1024 * 1024));
+      const outboundData = Array.from({ length: 12 }, () => Math.floor(Math.random() * 3 * 1024 * 1024));
       
-      <div class="stat-card">
-        <div class="stat-header">
-          <div class="stat-title">Virtual Machines</div>
-          <div class="stat-icon">
-            <i class="fas fa-desktop"></i>
-          </div>
-        </div>
-        <div class="stat-value">${vms?.length || 0}</div>
-        <div class="stat-subtitle">QEMU/KVM VMs</div>
-      </div>
-      
-      <div class="stat-card">
-        <div class="stat-header">
-          <div class="stat-title">Containers</div>
-          <div class="stat-icon">
-            <i class="fas fa-box"></i>
-          </div>
-        </div>
-        <div class="stat-value">${containers?.length || 0}</div>
-        <div class="stat-subtitle">LXC containers</div>
-      </div>
-      
-      <div class="stat-card">
-        <div class="stat-header">
-          <div class="stat-title">System Status</div>
-          <div class="stat-icon">
-            <i class="fas fa-heart"></i>
-          </div>
-        </div>
-        <div class="stat-value">
-          <span class="text-success">Online</span>
-        </div>
-        <div class="stat-subtitle">API connection</div>
-      </div>
-    `;
-  }
-  
-  /**
-   * Get node management HTML
-   * @param {Array} nodes - Nodes
-   * @returns {string} Node management HTML
-   */
-  getNodeManagementHTML(nodes) {
-    return this.app.ui.createCard('Server Management', `
-      <h5 class="mb-3">Add Proxmox Node</h5>
-      <form id="add-node-form" class="mb-4">
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label for="node-name" class="form-label">Node Name</label>
-            <input type="text" class="form-control" id="node-name" placeholder="e.g., pve1" required>
-          </div>
-          <div class="col-md-4">
-            <label for="node-hostname" class="form-label">Hostname/IP</label>
-            <input type="text" class="form-control" id="node-hostname" placeholder="e.g., 10.55.1.10" required>
-          </div>
-          <div class="col-md-2">
-            <label for="node-port" class="form-label">API Port</label>
-            <input type="number" class="form-control" id="node-port" value="8006" required>
-          </div>
-          <div class="col-md-2 d-flex align-items-end">
-            <button type="button" id="show-more-btn" class="btn btn-secondary w-100">More Options</button>
-          </div>
-        </div>
-        
-        <div id="advanced-options" class="mt-3" style="display: none;">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label for="api-username" class="form-label">API Username</label>
-              <input type="text" class="form-control" id="api-username" value="root@pam" placeholder="Username (e.g., api@pam!home)">
-            </div>
-            <div class="col-md-6">
-              <label for="api-password" class="form-label">API Password</label>
-              <input type="password" class="form-control" id="api-password" value="Poolamea01@" placeholder="Password">
-            </div>
-          </div>
-          
-          <div class="row g-3 mt-2">
-            <div class="col-md-6">
-              <label for="ssh-username" class="form-label">SSH Username</label>
-              <input type="text" class="form-control" id="ssh-username" value="root" placeholder="Username">
-            </div>
-            <div class="col-md-6">
-              <label for="ssh-password" class="form-label">SSH Password</label>
-              <input type="password" class="form-control" id="ssh-password" value="Poolamea01@" placeholder="Password">
-            </div>
-          </div>
-          
-          <div class="form-check mt-3">
-            <input class="form-check-input" type="checkbox" id="verify-ssl">
-            <label class="form-check-label" for="verify-ssl">
-              Verify SSL Certificate
-            </label>
-          </div>
-        </div>
-        
-        <div class="mt-3">
-          <button type="button" id="test-connection-btn" class="btn btn-outline-primary me-2">
-            <i class="fas fa-plug me-1"></i> Test Connection
-          </button>
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-plus me-1"></i> Add Node
-          </button>
-        </div>
-        
-        <div id="connection-test-results" class="mt-3" style="display: none;"></div>
-      </form>
-      
-      <h5 class="mb-3">Configured Nodes</h5>
-      ${this.getNodesTableHTML(nodes)}
-    `, 'server');
-  }
-  
-  /**
-   * Get nodes table HTML
-   * @param {Array} nodes - Nodes
-   * @returns {string} Nodes table HTML
-   */
-  getNodesTableHTML(nodes) {
-    if (nodes.length === 0) {
-      return `
-        <div class="alert alert-info">
-          <i class="fas fa-info-circle me-2"></i> No nodes have been added yet. Add your first Proxmox node above.
-        </div>
-      `;
+      // Create network chart
+      this.networkChart = Charts.createNetworkChart('network-chart', inboundData, outboundData, hours);
     }
     
-    return `
-      <div class="table-responsive">
-        <table class="custom-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Hostname/IP</th>
-              <th>Port</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${nodes.map(node => `
-              <tr>
-                <td>${node.name}</td>
-                <td>${node.api_host || node.hostname}</td>
-                <td>${node.api_port || node.port || 8006}</td>
-                <td>${this.app.ui.getStatusBadge(node.status || 'Unknown')}</td>
-                <td>
-                  <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary node-details-btn" data-id="${node.id}" title="View details">
-                      <i class="fas fa-info-circle"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger node-delete-btn" data-id="${node.id}" title="Delete node">
-                      <i class="fas fa-trash"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
-  
-  /**
-   * Get recent activity HTML
-   * @returns {string} Recent activity HTML
-   */
-  getRecentActivityHTML() {
-    return this.app.ui.createCard('Recent Activity', `
-      <div class="alert alert-info mb-0">
-        <i class="fas fa-info-circle me-2"></i> Activity logging will be available once you add and interact with Proxmox nodes.
-      </div>
-    `, 'history');
+    // VM/CT distribution chart
+    if (document.getElementById('distribution-chart')) {
+      const { stats } = cluster;
+      
+      // Create pie chart
+      this.distributionChart = Charts.createPieChart(
+        'distribution-chart',
+        [
+          stats.runningVMs || 0, 
+          stats.totalVMs - stats.runningVMs || 0,
+          stats.runningContainers || 0,
+          stats.totalContainers - stats.runningContainers || 0
+        ],
+        [
+          'Running VMs', 
+          'Stopped VMs', 
+          'Running Containers', 
+          'Stopped Containers'
+        ],
+        [
+          '#28a745', // Running VMs
+          '#dc3545', // Stopped VMs
+          '#17a2b8', // Running Containers
+          '#ffc107'  // Stopped Containers
+        ]
+      );
+    }
   }
   
   /**
    * Add event listeners
    */
   addEventListeners() {
-    // Toggle advanced options
-    const showMoreBtn = document.getElementById('show-more-btn');
-    const advancedOptions = document.getElementById('advanced-options');
-    
-    if (showMoreBtn && advancedOptions) {
-      showMoreBtn.addEventListener('click', () => {
-        const isHidden = advancedOptions.style.display === 'none';
-        advancedOptions.style.display = isHidden ? 'block' : 'none';
-        showMoreBtn.textContent = isHidden ? 'Less Options' : 'More Options';
-      });
-    }
-    
-    // Test connection button
-    const testConnectionBtn = document.getElementById('test-connection-btn');
-    if (testConnectionBtn) {
-      testConnectionBtn.addEventListener('click', () => {
-        this.testConnection();
-      });
-    }
-    
-    // Add node form
-    const addNodeForm = document.getElementById('add-node-form');
-    if (addNodeForm) {
-      addNodeForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        this.addNode();
-      });
-    }
-    
-    // Node details buttons
-    const nodeDetailsBtns = document.querySelectorAll('.node-details-btn');
-    nodeDetailsBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const nodeId = btn.dataset.id;
-        this.app.router.navigate('node-details', { id: nodeId });
-      });
-    });
-    
-    // Node delete buttons
-    const nodeDeleteBtns = document.querySelectorAll('.node-delete-btn');
-    nodeDeleteBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const nodeId = btn.dataset.id;
-        this.deleteNode(nodeId);
-      });
-    });
-    
     // Refresh button
     const refreshBtn = document.getElementById('refresh-btn');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
-        this.app.loadAppData().then(() => {
-          this.render();
-          this.app.ui.showSuccess('Data refreshed successfully');
-        });
+        this.renderDashboardContent();
       });
     }
+    
+    // Logout button
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        this.app.logout();
+      });
+    }
+    
+    // Navigation links
+    const navLinks = document.querySelectorAll('[data-route]');
+    navLinks.forEach(link => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        const route = link.getAttribute('data-route');
+        this.app.router.navigate(route);
+      });
+    });
+    
+    // View node buttons
+    const viewNodeBtns = document.querySelectorAll('[data-action="view-node"]');
+    viewNodeBtns.forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        const nodeId = btn.getAttribute('data-id');
+        if (nodeId) {
+          this.app.router.navigate('node-details', { id: nodeId });
+        }
+      });
+    });
   }
   
   /**
-   * Test connection to a node
+   * Set the active navigation item
+   * @param {string} route - Route name
    */
-  async testConnection() {
-    const hostname = document.getElementById('node-hostname').value;
-    const port = document.getElementById('node-port').value;
-    const username = document.getElementById('api-username').value;
-    const password = document.getElementById('api-password').value;
-    const verifySSL = document.getElementById('verify-ssl').checked;
-    const resultsContainer = document.getElementById('connection-test-results');
-    
-    // Validate input
-    if (!hostname || !port || !username || !password) {
-      this.app.ui.showError('Please fill in all required fields');
-      return;
-    }
-    
-    // Show loading state
-    resultsContainer.style.display = 'block';
-    resultsContainer.innerHTML = `
-      <div class="alert alert-info">
-        <div class="spinner-border spinner-border-sm me-2" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-        Testing connection to ${hostname}:${port}...
-      </div>
-    `;
-    
-    // Test connection
-    try {
-      const connectionData = {
-        host: hostname,
-        port,
-        username,
-        password,
-        realm: 'pam',
-        ssl: true,
-        verify: verifySSL
-      };
+  setActiveNavItem(route) {
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+      link.classList.remove('active');
       
-      const result = await this.app.api.testConnection(connectionData);
-      
-      if (result.success) {
-        resultsContainer.innerHTML = `
-          <div class="alert alert-success">
-            <i class="fas fa-check-circle me-2"></i> Connection successful! 
-            ${result.data ? `<div class="mt-2 small">Proxmox version: ${result.data.data?.version || 'Unknown'}</div>` : ''}
-          </div>
-        `;
-      } else {
-        resultsContainer.innerHTML = `
-          <div class="alert alert-danger">
-            <i class="fas fa-times-circle me-2"></i> Connection failed: ${result.message || 'Unknown error'}
-          </div>
-        `;
+      const linkRoute = link.getAttribute('data-route');
+      if (linkRoute === route) {
+        link.classList.add('active');
       }
-    } catch (error) {
-      resultsContainer.innerHTML = `
-        <div class="alert alert-danger">
-          <i class="fas fa-times-circle me-2"></i> Connection failed: ${error.message || 'Unknown error'}
-        </div>
-      `;
+    });
+  }
+  
+  /**
+   * Start auto-refresh
+   */
+  startAutoRefresh() {
+    // Clear any existing interval
+    this.stopAutoRefresh();
+    
+    // Set new interval
+    this.refreshInterval = setInterval(() => {
+      this.renderDashboardContent();
+    }, this.refreshRate);
+  }
+  
+  /**
+   * Stop auto-refresh
+   */
+  stopAutoRefresh() {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
     }
   }
   
   /**
-   * Add a new node
-   */
-  async addNode() {
-    // Get form values
-    const name = document.getElementById('node-name').value;
-    const hostname = document.getElementById('node-hostname').value;
-    const port = document.getElementById('node-port').value;
-    const apiUsername = document.getElementById('api-username').value;
-    const apiPassword = document.getElementById('api-password').value;
-    const sshUsername = document.getElementById('ssh-username').value;
-    const sshPassword = document.getElementById('ssh-password').value;
-    const verifySSL = document.getElementById('verify-ssl').checked;
-    
-    // Validate input
-    if (!name || !hostname || !port || !apiUsername || !apiPassword) {
-      this.app.ui.showError('Please fill in all required fields');
-      return;
-    }
-    
-    // Show loading state
-    this.app.ui.showLoading('Adding node...');
-    
-    // Add node
-    try {
-      const nodeData = {
-        name,
-        api_host: hostname,
-        api_port: port,
-        api_username: apiUsername,
-        api_password: apiPassword,
-        api_realm: 'pam',
-        ssh_host: hostname,
-        ssh_port: 22,
-        ssh_username: sshUsername || apiUsername,
-        ssh_password: sshPassword || apiPassword,
-        use_ssl: true,
-        verify_ssl: verifySSL
-      };
-      
-      await this.app.api.addNode(nodeData);
-      
-      // Reload data
-      await this.app.loadAppData();
-      
-      // Hide loading state
-      this.app.ui.hideLoading();
-      
-      // Show success message
-      this.app.ui.showSuccess('Node added successfully');
-      
-      // Re-render view
-      this.render();
-    } catch (error) {
-      // Hide loading state
-      this.app.ui.hideLoading();
-      
-      // Show error message
-      this.app.ui.showError('Failed to add node: ' + (error.message || 'Unknown error'));
-    }
-  }
-  
-  /**
-   * Delete a node
-   * @param {number} nodeId - Node ID
-   */
-  async deleteNode(nodeId) {
-    // Ask for confirmation
-    if (!confirm('Are you sure you want to delete this node?')) {
-      return;
-    }
-    
-    // Show loading state
-    this.app.ui.showLoading('Deleting node...');
-    
-    // Delete node
-    try {
-      await this.app.api.deleteNode(nodeId);
-      
-      // Reload data
-      await this.app.loadAppData();
-      
-      // Hide loading state
-      this.app.ui.hideLoading();
-      
-      // Show success message
-      this.app.ui.showSuccess('Node deleted successfully');
-      
-      // Re-render view
-      this.render();
-    } catch (error) {
-      // Hide loading state
-      this.app.ui.hideLoading();
-      
-      // Show error message
-      this.app.ui.showError('Failed to delete node: ' + (error.message || 'Unknown error'));
-    }
-  }
-  
-  /**
-   * Get cluster monitoring HTML
-   * @param {Array} nodes - Nodes
-   * @returns {string} Cluster monitoring HTML
-   */
-  /**
-   * Format bytes to human-readable string
+   * Format bytes to human-readable size
    * @param {number} bytes - Bytes
    * @param {number} decimals - Decimal places
-   * @returns {string} Formatted bytes
+   * @returns {string} Formatted size
    */
   formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 GB';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
-
-  /**
-   * Get cluster monitoring HTML
-   * @param {Array} nodes - Nodes array
-   * @param {Object} clusterStats - Cluster statistics
-   * @param {Object} networkUsage - Network usage
-   * @returns {string} Cluster monitoring HTML
-   */
-  getClusterMonitoringHTML(nodes, clusterStats = null, networkUsage = null) {
-    const noNodesMessage = `
-      <div class="alert alert-info mb-0">
-        <i class="fas fa-info-circle me-2"></i> No nodes available. Add your first Proxmox node to see resource monitoring.
-      </div>
-    `;
-    
-    if (nodes.length === 0) {
-      return this.app.ui.createCard('Cluster Resource Monitoring', noNodesMessage, 'chart-line');
-    }
-    
-    // Calculate usage percentages
-    const cpuUsage = clusterStats ? Math.round(clusterStats.cpuUsage) : 0;
-    
-    const memoryPercentage = clusterStats && clusterStats.totalMemory > 0 
-      ? Math.round((clusterStats.usedMemory / clusterStats.totalMemory) * 100) 
-      : 0;
-    
-    const memoryTotal = clusterStats ? this.formatBytes(clusterStats.totalMemory) : '0 GB';
-    const memoryUsed = clusterStats ? this.formatBytes(clusterStats.usedMemory) : '0 GB';
-    
-    const diskPercentage = clusterStats && clusterStats.totalStorage > 0 
-      ? Math.round((clusterStats.usedStorage / clusterStats.totalStorage) * 100) 
-      : 0;
-    
-    const diskTotal = clusterStats ? this.formatBytes(clusterStats.totalStorage) : '0 GB';
-    const diskUsed = clusterStats ? this.formatBytes(clusterStats.usedStorage) : '0 GB';
-    
-    const networkIn = networkUsage ? `${this.formatNetworkValue(networkUsage.inbound)} MB/s` : '0 MB/s';
-    const networkOut = networkUsage ? `${this.formatNetworkValue(networkUsage.outbound)} MB/s` : '0 MB/s';
-    
-    const onlineNodes = clusterStats ? clusterStats.onlineNodes : 0;
-    const warningNodes = clusterStats ? clusterStats.warningNodes : 0;
-    const offlineNodes = clusterStats ? clusterStats.offlineNodes : 0;
-    
-    return `
-      <div class="row mb-4">
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-microchip me-2 text-primary"></i>
-                CPU Usage
-              </h5>
-            </div>
-            <div class="card-body text-center">
-              <div class="usage-display">
-                <div class="usage-circle" id="cpu-usage-circle">
-                  <span class="usage-percentage" id="cpu-usage-percentage">${cpuUsage}%</span>
-                  <span class="usage-label" id="cpu-usage-label">${clusterStats?.totalCPUs || 0} CPUs Total</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-memory me-2 text-success"></i>
-                Memory Usage
-              </h5>
-            </div>
-            <div class="card-body text-center">
-              <div class="usage-display">
-                <div class="usage-circle" id="memory-usage-circle">
-                  <span class="usage-percentage" id="memory-usage-percentage">${memoryPercentage}%</span>
-                  <span class="usage-label" id="memory-usage-label">${memoryUsed} / ${memoryTotal}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-hdd me-2 text-danger"></i>
-                Disk Usage
-              </h5>
-            </div>
-            <div class="card-body text-center">
-              <div class="usage-display">
-                <div class="usage-circle" id="disk-usage-circle">
-                  <span class="usage-percentage" id="disk-usage-percentage">${diskPercentage}%</span>
-                  <span class="usage-label" id="disk-usage-label">${diskUsed} / ${diskTotal}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="row mb-4">
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-network-wired me-2 text-info"></i>
-                Network Traffic
-              </h5>
-            </div>
-            <div class="card-body">
-              <div class="network-usage-display p-3 text-center">
-                <div class="row">
-                  <div class="col-6 border-end">
-                    <h6 class="text-primary">Inbound</h6>
-                    <div class="network-value" id="network-in">${networkIn}</div>
-                  </div>
-                  <div class="col-6">
-                    <h6 class="text-warning">Outbound</h6>
-                    <div class="network-value" id="network-out">${networkOut}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-server me-2 text-secondary"></i>
-                Cluster Status
-              </h5>
-            </div>
-            <div class="card-body">
-              <div class="cluster-status-display p-3">
-                <div class="row text-center">
-                  <div class="col-4">
-                    <div class="status-circle bg-success">
-                      <i class="fas fa-check"></i>
-                    </div>
-                    <div class="status-label mt-2">Online Nodes</div>
-                    <div class="status-value" id="online-nodes">${clusterStats.onlineNodes}</div>
-                  </div>
-                  <div class="col-4">
-                    <div class="status-circle bg-warning">
-                      <i class="fas fa-exclamation"></i>
-                    </div>
-                    <div class="status-label mt-2">Warning Nodes</div>
-                    <div class="status-value" id="warning-nodes">${clusterStats.warningNodes}</div>
-                  </div>
-                  <div class="col-4">
-                    <div class="status-circle bg-danger">
-                      <i class="fas fa-times"></i>
-                    </div>
-                    <div class="status-label mt-2">Offline Nodes</div>
-                    <div class="status-value" id="offline-nodes">${clusterStats.offlineNodes}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+    return formatBytes(bytes, decimals);
   }
   
   /**
-   * Get node status cards HTML
-   * @param {Array} nodes - Nodes
-   * @returns {string} Node status cards HTML
-   */
-  getNodeStatusCardsHTML(nodes) {
-    if (!nodes || nodes.length === 0) {
-      return `
-        <div class="col-md-12">
-          <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i> No nodes available. Please add a node to see node status.
-          </div>
-        </div>
-      `;
-    }
-    
-    return nodes.map(node => {
-      // CPU usage
-      let cpuUsage = 0;
-      if (node.cpu_usage !== undefined) {
-        cpuUsage = Math.round(node.cpu_usage);
-      }
-      
-      // Memory usage
-      let memoryUsagePercent = 0;
-      if (node.memory_total > 0 && node.memory_used !== undefined) {
-        memoryUsagePercent = Math.round((node.memory_used / node.memory_total) * 100);
-      }
-      
-      // Determine status classes
-      const statusClass = node.status === 'online' ? 'status-online' : node.status === 'warning' ? 'status-warning' : 'status-offline';
-      const statusBadgeClass = node.status === 'online' ? 'status-online' : node.status === 'warning' ? 'status-warning' : 'status-offline';
-      
-      // Format the display name of the status
-      const statusDisplay = node.status ? node.status.charAt(0).toUpperCase() + node.status.slice(1).toLowerCase() : 'Unknown';
-
-      return `
-        <div class="col-md-6 col-xl-3 mb-4">
-          <div class="node-status-card">
-            <div class="node-title">
-              <div class="d-flex align-items-center w-100">
-                <div class="status-indicator ${statusClass}"></div>
-                <span class="fs-5 fw-semibold">${node.name}</span>
-                <a href="#" class="ms-auto node-details-btn text-primary" data-id="${node.id}" title="View details">
-                  <i class="fas fa-external-link-alt"></i>
-                </a>
-              </div>
-              <div class="text-muted mt-1" style="font-size: 0.75rem;">${node.hostname || node.api_host}:${node.port || node.api_port || 8006}</div>
-            </div>
-            
-            <div class="mt-2 mb-3">
-              <div class="status-badge status-${node.status?.toLowerCase() || 'unknown'}">
-                ${statusDisplay}
-              </div>
-            </div>
-            
-            <hr class="my-2" style="border-color: rgba(255,255,255,0.1);">
-            
-            <div class="d-flex justify-content-between text-center mt-3">
-              <div>
-                <div class="text-muted small">CPU</div>
-                <div class="fs-5 fw-semibold">${cpuUsage}%</div>
-              </div>
-              <div>
-                <div class="text-muted small">Memory</div>
-                <div class="fs-5 fw-semibold">${memoryUsagePercent}%</div>
-              </div>
-              <div>
-                <div class="text-muted small">VMs</div>
-                <div class="fs-5 fw-semibold">${node.vms || node.running_vms || 0}</div>
-              </div>
-              <div>
-                <div class="text-muted small">LXC</div>
-                <div class="fs-5 fw-semibold">${node.containers || node.running_containers || 0}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-  
-  /**
-   * Get recent events HTML
-   * @returns {string} Recent events HTML
-   */
-  getRecentEventsHTML() {
-    return this.app.ui.createCard('Recent Events', `
-      <div class="alert alert-info mb-0">
-        <i class="fas fa-info-circle me-2"></i> Event logging will be available after you interact with Proxmox nodes.
-      </div>
-    `, 'history');
-  }
-  
-  /**
-   * Format uptime in seconds to readable format
+   * Format uptime to human-readable time
    * @param {number} seconds - Uptime in seconds
    * @returns {string} Formatted uptime
    */
   formatUptime(seconds) {
-    if (seconds === 0) return 'N/A';
-    
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+    return formatUptime(seconds);
   }
   
   /**
-   * Update active VM count
-   * @param {Array} vms - VMs
+   * Calculate percentage
+   * @param {number} value - Value
+   * @param {number} total - Total
+   * @returns {number} Percentage
    */
-  updateActiveVMCount(vms) {
-    const activeVMsElement = document.getElementById('active-vms');
-    if (activeVMsElement) {
-      const activeVMs = vms.filter(vm => 
-        vm.status && 
-        (vm.status.toLowerCase() === 'running' || vm.status.toLowerCase() === 'online')
-      ).length;
-      
-      activeVMsElement.textContent = activeVMs;
-    }
+  calculatePercentage(value, total) {
+    return calculatePercentage(value, total);
   }
   
   /**
-   * Initialize charts
-   * @param {Array} nodes - Nodes
+   * Convert CPU usage from decimal to percentage
+   * @param {number} value - CPU usage (0-1)
+   * @returns {number} CPU usage percentage
    */
-  initializeCharts(nodes, clusterStats) {
-    // Don't reset values that are already populated by the dashboard endpoint
-    // We'll only fetch additional monitoring data if needed
-    
-    // We can proceed with fetching more detailed node data
-    if (nodes.length === 0) return;
-    
-    // Only initialize with actual node data
-    setTimeout(() => {
-      // Get aggregate node monitoring data
-      this.fetchNodesMonitoringData(nodes).then(monitoringData => {
-        if (monitoringData && monitoringData.length > 0) {
-          this.updateResourceDisplays(monitoringData);
-          this.updateNodeStatusCounts(nodes);
-        }
-      }).catch(error => {
-        console.warn('Error fetching node monitoring data:', error);
-        // Don't reset values if there's an error - keep what we already have
-      });
-    }, 100);
-  }
-  
-  /**
-   * Fetch monitoring data for all nodes
-   * @param {Array} nodes - Nodes
-   * @returns {Promise<Array>} Monitoring data
-   */
-  async fetchNodesMonitoringData(nodes) {
-    try {
-      // Fetch monitoring data for each node
-      const monitoringPromises = nodes.map(node => this.app.api.getNodeMonitoring(node.id));
-      const monitoringResults = await Promise.all(monitoringPromises);
-      
-      // Filter out failed requests
-      return monitoringResults.filter(result => result && !result.error);
-    } catch (error) {
-      console.error('Failed to fetch nodes monitoring data:', error);
-      return [];
-    }
-  }
-  
-  /**
-   * Initialize CPU chart with real data
-   * @param {Array} monitoringData - Node monitoring data
-   */
-  initCPUChart(monitoringData) {
-    const ctx = document.getElementById('cpu-chart');
-    if (!ctx) return;
-    
-    // Prepare data for CPU usage percentage
-    const data = {
-      labels: monitoringData.map(node => node.name || `Node ${node.id}`),
-      datasets: [
-        {
-          label: 'Average CPU Usage',
-          data: monitoringData.map(node => node.cpu ? node.cpu.usage || 0 : 0),
-          borderColor: '#8257e6',
-          backgroundColor: 'rgba(130, 87, 230, 0.1)',
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2
-        }
-      ]
-    };
-    
-    const config = {
-      type: 'bar',
-      data,
-      options: this.getChartOptions('CPU Usage (%)')
-    };
-    
-    this.charts.cpu = new Chart(ctx, config);
-  }
-  
-  /**
-   * Initialize memory chart with real data
-   * @param {Array} monitoringData - Node monitoring data
-   */
-  initMemoryChart(monitoringData) {
-    const ctx = document.getElementById('memory-chart');
-    if (!ctx) return;
-    
-    // Prepare data for memory usage percentage
-    const data = {
-      labels: monitoringData.map(node => node.name || `Node ${node.id}`),
-      datasets: [
-        {
-          label: 'Average Memory Usage',
-          data: monitoringData.map(node => node.memory ? node.memory.usagePercent || 0 : 0),
-          borderColor: '#53c986',
-          backgroundColor: 'rgba(83, 201, 134, 0.1)',
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2
-        }
-      ]
-    };
-    
-    const config = {
-      type: 'line',
-      data,
-      options: this.getChartOptions('Memory Usage (%)')
-    };
-    
-    this.charts.memory = new Chart(ctx, config);
-  }
-  
-  /**
-   * Initialize storage chart with real data
-   * @param {Array} monitoringData - Node monitoring data
-   */
-  initStorageChart(monitoringData) {
-    const ctx = document.getElementById('storage-chart');
-    if (!ctx) return;
-    
-    // Calculate aggregate storage data
-    let totalFree = 0;
-    let totalUsed = 0;
-    
-    // Use real data if available, otherwise display empty chart
-    monitoringData.forEach(node => {
-      if (node.storage) {
-        totalFree += node.storage.free || 0;
-        totalUsed += node.storage.used || 0;
-      }
-    });
-    
-    const data = {
-      labels: ['Free', 'Used'],
-      datasets: [
-        {
-          data: [totalFree, totalUsed],
-          backgroundColor: ['#53c986', '#ff5252'],
-          hoverOffset: 4,
-          borderWidth: 1,
-          borderColor: 'rgba(0, 0, 0, 0.1)'
-        }
-      ]
-    };
-    
-    const config = {
-      type: 'doughnut',
-      data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '70%',
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              color: 'rgb(240, 240, 240)',
-              font: {
-                family: 'Inter, sans-serif',
-                size: 12
-              },
-              padding: 15,
-              boxWidth: 15,
-              boxHeight: 15,
-              usePointStyle: true,
-              pointStyle: 'circle'
-            }
-          },
-          title: {
-            display: true,
-            text: 'Storage Usage',
-            color: 'rgb(240, 240, 240)',
-            font: {
-              family: 'Inter, sans-serif',
-              size: 14,
-              weight: 'normal'
-            },
-            padding: {
-              bottom: 15
-            }
-          },
-          tooltip: {
-            backgroundColor: 'rgba(42, 42, 42, 0.9)',
-            titleColor: 'rgb(240, 240, 240)',
-            bodyColor: 'rgb(240, 240, 240)',
-            borderColor: 'var(--accent-primary)',
-            borderWidth: 1,
-            padding: 10,
-            titleFont: {
-              family: 'Inter, sans-serif',
-              weight: 'bold'
-            },
-            bodyFont: {
-              family: 'Inter, sans-serif'
-            },
-            cornerRadius: 6,
-            boxPadding: 5
-          }
-        },
-        backgroundColor: 'transparent'
-      }
-    };
-    
-    this.charts.storage = new Chart(ctx, config);
-  }
-  
-  /**
-   * Initialize network chart
-   */
-  initNetworkChart() {
-    const ctx = document.getElementById('network-chart');
-    if (!ctx) return;
-    
-    // Sample data for demonstration
-    const data = {
-      labels: this.generateTimeLabels(12),
-      datasets: [
-        {
-          label: 'Inbound',
-          data: this.generateRandomData(12, 10, 100),
-          borderColor: '#33b5e5',
-          backgroundColor: 'rgba(51, 181, 229, 0.1)',
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2
-        },
-        {
-          label: 'Outbound',
-          data: this.generateRandomData(12, 5, 50),
-          borderColor: '#ffcc33',
-          backgroundColor: 'rgba(255, 204, 51, 0.1)',
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2
-        }
-      ]
-    };
-    
-    const config = {
-      type: 'line',
-      data,
-      options: this.getChartOptions('Network Traffic (MB/s)')
-    };
-    
-    this.charts.network = new Chart(ctx, config);
-  }
-  
-  /**
-   * Get chart options
-   * @param {string} yAxisTitle - Y-axis title
-   * @returns {Object} Chart options
-   */
-  getChartOptions(yAxisTitle) {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            color: 'rgb(240, 240, 240)',
-            font: {
-              family: 'Inter, sans-serif'
-            }
-          }
-        },
-        title: {
-          display: false
-        },
-        tooltip: {
-          backgroundColor: 'rgba(42, 42, 42, 0.9)',
-          titleColor: 'rgb(240, 240, 240)',
-          bodyColor: 'rgb(240, 240, 240)',
-          borderColor: 'var(--accent-primary)',
-          borderWidth: 1,
-          padding: 10,
-          titleFont: {
-            family: 'Inter, sans-serif',
-            size: 14,
-            weight: 'bold'
-          },
-          bodyFont: {
-            family: 'Inter, sans-serif',
-            size: 13
-          },
-          cornerRadius: 6
-        }
-      },
-      scales: {
-        x: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: 'rgb(200, 200, 200)',
-            font: {
-              family: 'Inter, sans-serif'
-            }
-          },
-          border: {
-            color: 'rgba(255, 255, 255, 0.2)'
-          }
-        },
-        y: {
-          grid: {
-            color: 'rgba(255, 255, 255, 0.1)'
-          },
-          ticks: {
-            color: 'rgb(200, 200, 200)',
-            font: {
-              family: 'Inter, sans-serif'
-            }
-          },
-          title: {
-            display: true,
-            text: yAxisTitle,
-            color: 'rgb(200, 200, 200)',
-            font: {
-              family: 'Inter, sans-serif',
-              size: 12
-            }
-          },
-          border: {
-            color: 'rgba(255, 255, 255, 0.2)'
-          }
-        }
-      },
-      color: 'rgb(240, 240, 240)',
-      backgroundColor: 'transparent'
-    };
-  }
-  
-  /**
-   * Generate time labels for charts
-   * @param {number} count - Number of labels
-   * @returns {Array} Time labels
-   */
-  generateTimeLabels(count) {
-    const labels = [];
-    const now = new Date();
-    
-    for (let i = count - 1; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 3600 * 1000);
-      labels.push(time.getHours().toString().padStart(2, '0') + ':00');
-    }
-    
-    return labels;
-  }
-  
-  /**
-   * Generate sample data for charts
-   * This function has been modified to always return zero values
-   * to avoid showing incorrect synthetic data while waiting for API data
-   * @param {number} count - Number of data points
-   * @param {number} min - Minimum value (not used)
-   * @param {number} max - Maximum value (not used)
-   * @returns {Array} Zero data array
-   */
-  generateRandomData(count, min, max) {
-    // Return an array of zeros instead of random data
-    return Array(count).fill(0);
-  }
-  
-  /**
-   * Update resource displays with real data
-   * @param {Array} monitoringData - Node monitoring data
-   */
-  updateResourceDisplays(monitoringData) {
-    if (!monitoringData || monitoringData.length === 0) return;
-    
-    try {
-      // Calculate aggregate CPU usage
-      let totalCpuUsage = 0;
-      let totalCpuCores = 0;
-      let totalCpuSockets = 0;
-      
-      // Calculate aggregate memory usage
-      let totalMemoryUsed = 0;
-      let totalMemorySize = 0;
-      
-      // Calculate aggregate disk usage
-      let totalDiskUsed = 0;
-      let totalDiskSize = 0;
-      
-      // Calculate aggregate network traffic
-      let totalNetworkIn = 0;
-      let totalNetworkOut = 0;
-      
-      // Process monitoring data from all nodes
-      monitoringData.forEach(nodeData => {
-        // CPU data
-        if (nodeData.cpu) {
-          totalCpuUsage += nodeData.cpu.usage || 0;
-          totalCpuCores += nodeData.cpu.cores || 0;
-          totalCpuSockets += nodeData.cpu.sockets || 0;
-        }
-        
-        // Memory data
-        if (nodeData.memory) {
-          totalMemoryUsed += nodeData.memory.used || 0;
-          totalMemorySize += nodeData.memory.total || 0;
-        }
-        
-        // Storage data
-        if (nodeData.storage || nodeData.rootfs) {
-          const storage = nodeData.storage || nodeData.rootfs;
-          totalDiskUsed += storage.used || 0;
-          totalDiskSize += storage.total || 0;
-        }
-        
-        // Network data
-        if (nodeData.network) {
-          totalNetworkIn += nodeData.network.in || 0;
-          totalNetworkOut += nodeData.network.out || 0;
-        }
-      });
-      
-      // Calculate averages
-      const avgCpuUsage = monitoringData.length > 0 ? Math.round(totalCpuUsage / monitoringData.length) : 0;
-      
-      // Update CPU display
-      document.getElementById('cpu-usage-percentage').textContent = `${avgCpuUsage}%`;
-      document.getElementById('cpu-usage-label').textContent = `${totalCpuCores} CPUs, ${totalCpuSockets} Socket(s)`;
-      document.getElementById('cpu-usage-circle').style.background = 
-        `conic-gradient(#3498db ${avgCpuUsage}%, #1a1a1a ${avgCpuUsage}%)`;
-      
-      // Update Memory display
-      const memoryUsagePercent = totalMemorySize > 0 ? Math.round((totalMemoryUsed / totalMemorySize) * 100) : 0;
-      const memoryUsedGB = this.formatGB(totalMemoryUsed);
-      const memorySizeGB = this.formatGB(totalMemorySize);
-      
-      document.getElementById('memory-usage-percentage').textContent = `${memoryUsagePercent}%`;
-      document.getElementById('memory-usage-label').textContent = `${memoryUsedGB} / ${memorySizeGB}`;
-      document.getElementById('memory-usage-circle').style.background = 
-        `conic-gradient(#2ecc71 ${memoryUsagePercent}%, #1a1a1a ${memoryUsagePercent}%)`;
-      
-      // Update Disk display
-      const diskUsagePercent = totalDiskSize > 0 ? Math.round((totalDiskUsed / totalDiskSize) * 100) : 0;
-      const diskUsedGB = this.formatGB(totalDiskUsed);
-      const diskSizeGB = this.formatGB(totalDiskSize);
-      
-      document.getElementById('disk-usage-percentage').textContent = `${diskUsagePercent}%`;
-      document.getElementById('disk-usage-label').textContent = `${diskUsedGB} / ${diskSizeGB}`;
-      document.getElementById('disk-usage-circle').style.background = 
-        `conic-gradient(#e74c3c ${diskUsagePercent}%, #1a1a1a ${diskUsagePercent}%)`;
-      
-      // Update Network display
-      document.getElementById('network-in').textContent = `${this.formatNetworkSpeed(totalNetworkIn)}`;
-      document.getElementById('network-out').textContent = `${this.formatNetworkSpeed(totalNetworkOut)}`;
-    } catch (error) {
-      console.error('Error updating resource displays:', error);
-    }
-  }
-  
-  /**
-   * Update node status counts
-   * @param {Array} nodes - Nodes
-   */
-  updateNodeStatusCounts(nodes) {
-    if (!nodes || nodes.length === 0) return;
-    
-    try {
-      let onlineCount = 0;
-      let warningCount = 0;
-      let offlineCount = 0;
-      
-      // Count nodes by status
-      nodes.forEach(node => {
-        const status = (node.status || node.node_status || '').toLowerCase();
-        if (status === 'online') {
-          onlineCount++;
-        } else if (status === 'warning') {
-          warningCount++;
-        } else {
-          offlineCount++;
-        }
-      });
-      
-      // Update status counts
-      document.getElementById('online-nodes').textContent = onlineCount;
-      document.getElementById('warning-nodes').textContent = warningCount;
-      document.getElementById('offline-nodes').textContent = offlineCount;
-    } catch (error) {
-      console.error('Error updating node status counts:', error);
-    }
-  }
-  
-  /**
-   * Format bytes to GB with 2 decimal places
-   * @param {number} bytes - Bytes
-   * @returns {string} Formatted GB
-   */
-  formatGB(bytes) {
-    if (!bytes || isNaN(bytes)) return '0 GB';
-    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-  }
-  
-  /**
-   * Format network speed
-   * @param {number} bytesPerSec - Bytes per second
-   * @returns {string} Formatted network speed
-   */
-  formatNetworkSpeed(bytesPerSec) {
-    if (!bytesPerSec || isNaN(bytesPerSec)) return '0 MB/s';
-    return (bytesPerSec / (1024 * 1024)).toFixed(2) + ' MB/s';
+  cpuToPercentage(value) {
+    return cpuToPercentage(value);
   }
 }

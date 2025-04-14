@@ -1,1851 +1,1297 @@
 /**
  * Proxmox Manager - Express Server
- * Handles API requests to Proxmox nodes and database operations
+ * Direct integration with Proxmox VE API
  */
+require('dotenv').config();
 const express = require('express');
+const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const bodyParser = require('body-parser');
-const { Pool } = require('pg');
-const bcrypt = require('bcrypt');
-const path = require('path');
 const axios = require('axios');
 const https = require('https');
-const { Client } = require('ssh2');
-const fs = require('fs');
-require('dotenv').config();
-
-// Check environment mode
-// NODE_ENV is a common environment variable used to determine the application environment
-if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = 'development';
-  console.log('Running in development mode');
-}
+const path = require('path');
+const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 
 // Create Express app
 const app = express();
-const port = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
-// Configure middleware - IMPORTANT: This must come before route definitions
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Helper function to get node details from the database
-async function getNodeFromDatabase(nodeId) {
-  const nodeResult = await pool.query(
-    'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-    [nodeId]
-  );
-  
-  if (nodeResult.rowCount === 0) {
-    return null;
-  }
-  
-  const dbNode = nodeResult.rows[0];
-  
-  return {
-    id: dbNode.id,
-    name: dbNode.name,
-    api_host: dbNode.hostname,
-    api_port: dbNode.port || 8006,
-    api_username: dbNode.username || 'api@pam!home', // Default to our API user
-    api_password: dbNode.password || '8cd15ef7-d25b-4955-9c32-48d42e23b109', // Default password
-    api_realm: 'pam',
-    use_ssl: true,
-    verify_ssl: false
-  };
-}
-
-// Helper function to authenticate with Proxmox API and get a ticket
-async function getProxmoxAuthTicket(node) {
-  const protocol = node.use_ssl ? 'https' : 'http';
-  // Format username correctly - don't add @realm if it's already included
-  const formattedUsername = node.api_username.includes('@') ? 
-    node.api_username : `${node.api_username}@${node.api_realm}`;
-  
-  const axiosInstance = axios.create({
-    httpsAgent: new https.Agent({
-      rejectUnauthorized: node.verify_ssl
-    }),
-    timeout: 8000 // 8 second timeout
-  });
-  
-  try {
-    console.log(`Authenticating with Proxmox API on ${node.api_host}:${node.api_port} using ${formattedUsername}`);
-    
-    // Debug authentication details (sanitized password)
-    console.log(`Authentication details: user=${formattedUsername}, password=[REDACTED]`);
-    
-    // Try different authentication methods
-    let authResponse;
-    try {
-      // Method 1: Form data with proper encoding
-      authResponse = await axiosInstance.post(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
-        `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(node.api_password)}`,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        }
-      );
-    } catch (err) {
-      console.log('First authentication method failed, trying alternative approach');
-      
-      // Method 2: JSON data
-      authResponse = await axiosInstance.post(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/access/ticket`,
-        {
-          username: formattedUsername,
-          password: node.api_password
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
-    
-    console.log('Authentication successful, got ticket');
-    
-    return {
-      ticket: authResponse.data.data.ticket,
-      csrfToken: authResponse.data.data.CSRFPreventionToken
-    };
-  } catch (err) {
-    console.error('Proxmox authentication error:', err);
-    throw err;
-  }
-}
-
-// Database connection
+// Database configuration
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  connectionString: process.env.DATABASE_URL
 });
 
-// Add session middleware - IMPORTANT: This must come before route definitions
-const session = require('express-session');
+// Middleware
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static('public'));
 
-// Configure session store
-const pgSession = require('connect-pg-simple')(session);
-
+// Session configuration
 app.use(session({
   store: new pgSession({
-    pool: pool,
-    tableName: 'user_sessions',
-    createTableIfMissing: true
+    pool,
+    tableName: 'user_sessions'
   }),
   secret: process.env.SESSION_SECRET || 'proxmox-manager-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 1000 * 60 * 60 * 24 // 24 hours
-  }
+  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
 }));
 
-// API status endpoint for health check
-app.get('/api/status', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
-    message: 'Proxmox Manager API is running',
-    serverTime: new Date().toISOString()
+// Axios instance for Proxmox API
+const createProxmoxClient = (host, port, username, password, realm = 'pam', verifySSL = false) => {
+  // Create an HTTPS agent that allows self-signed certificates
+  const httpsAgent = new https.Agent({
+    rejectUnauthorized: verifySSL
   });
-});
 
-// Get current user from session
-app.get('/api/user', (req, res) => {
-  if (req.session && req.session.isAuthenticated && req.session.user) {
-    res.json({ user: req.session.user });
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
-  }
-});
-
-// Update user settings
-app.put('/api/user', async (req, res) => {
-  // Check if user is authenticated
-  if (!req.session || !req.session.isAuthenticated || !req.session.user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  
-  const { email, currentPassword, newPassword } = req.body;
-  const userId = req.session.user.id;
-  
-  try {
-    // If email is provided, update it
-    if (email) {
-      await pool.query(
-        'UPDATE users SET email = $1 WHERE id = $2',
-        [email, userId]
-      );
+  return axios.create({
+    baseURL: `https://${host}:${port}/api2/json`,
+    httpsAgent,
+    headers: {
+      'Content-Type': 'application/json'
     }
-    
-    // If changing password
-    if (currentPassword && newPassword) {
-      // Verify current password
-      const user = await pool.query(
-        'SELECT password FROM users WHERE id = $1',
-        [userId]
-      );
-      
-      if (user.rowCount === 0) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      
-      const passwordMatch = await bcrypt.compare(currentPassword, user.rows[0].password);
-      
-      if (!passwordMatch) {
-        return res.status(400).json({ error: 'Current password is incorrect' });
-      }
-      
-      // Hash and update new password
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      
-      await pool.query(
-        'UPDATE users SET password = $1 WHERE id = $2',
-        [hashedPassword, userId]
-      );
-    }
-    
-    // Get updated user data
-    const updatedUser = await pool.query(
-      'SELECT id, username, email, is_admin, created_at FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (updatedUser.rowCount === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Update session with new user data
-    req.session.user = updatedUser.rows[0];
-    
-    res.json({ 
-      success: true,
-      message: 'User settings updated successfully',
-      user: updatedUser.rows[0]
-    });
-  } catch (err) {
-    console.error('Error updating user settings:', err);
-    res.status(500).json({ error: 'Failed to update user settings' });
-  }
-});
-
-// Logout endpoint
-app.post('/api/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('Error destroying session:', err);
-      return res.status(500).json({ error: 'Failed to logout' });
-    }
-    res.json({ success: true, message: 'Logged out successfully' });
   });
-});
+};
 
-// Global VMs and containers endpoints (used for dashboard data)
-// Dashboard endpoint for aggregated cluster data
-app.get('/api/dashboard', async (req, res) => {
-  // This endpoint leverages Proxmox's cluster API - we can get all cluster data from just one node
+// Authenticate with Proxmox API and get ticket
+async function authenticateProxmox(client, username, password, realm = 'pam') {
   try {
-    // Get all nodes from database
-    const nodesResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password, node_status FROM nodes'
-    );
-    
-    if (nodesResult.rowCount === 0) {
-      return res.json({
-        success: true,
-        cluster: {
-          nodes: [],
-          stats: {
-            totalNodes: 0,
-            onlineNodes: 0,
-            warningNodes: 0,
-            offlineNodes: 0,
-            totalVMs: 0,
-            runningVMs: 0,
-            totalContainers: 0,
-            runningContainers: 0,
-            totalCPUs: 0,
-            cpuUsage: 0,
-            totalMemory: 0,
-            usedMemory: 0,
-            totalStorage: 0,
-            usedStorage: 0
-          },
-          networkUsage: {
-            inbound: 0,
-            outbound: 0
-          }
+    console.log(`Authenticating with Proxmox API using ${username}`);
+    const response = await client.post('/access/ticket', 
+      `username=${username}&password=${password}&realm=${realm}`, 
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
         }
-      });
-    }
-    
-    const nodes = nodesResult.rows;
-    const clusterStats = {
-      totalNodes: 0,  // Start with 0 and only count valid nodes
-      onlineNodes: 0,
-      warningNodes: 0,
-      offlineNodes: 0, // Start with 0 and increment based on node status
-      totalVMs: 0,
-      runningVMs: 0,
-      totalContainers: 0,
-      runningContainers: 0,
-      totalCPUs: 0,
-      cpuUsage: 0,
-      totalMemory: 0,
-      usedMemory: 0,
-      totalStorage: 0,
-      usedStorage: 0
-    };
-    
-    const networkUsage = {
-      inbound: 0,
-      outbound: 0
-    };
-    
-    const nodeDetails = [];
-    
-    // Store the total number of database nodes
-    clusterStats.totalNodes = 0;  // Will be incremented for each valid node added to nodeDetails
-    
-    // For each node, get status and resources
-    for (const dbNode of nodes) {
-      try {
-        // Map to expected format for API calls
-        const node = {
-          id: dbNode.id,
-          name: dbNode.name,
-          api_host: dbNode.hostname,
-          api_port: dbNode.port || 8006,
-          api_username: dbNode.username,
-          api_password: dbNode.password,
-          api_realm: 'pam',
-          use_ssl: true,
-          verify_ssl: false,
-          status: dbNode.node_status || 'unknown'
-        };
-    
-        const protocol = node.use_ssl ? 'https' : 'http';
-        
-        // Create API client
-        const axiosInstance = axios.create({
-          httpsAgent: new https.Agent({
-            rejectUnauthorized: node.verify_ssl
-          }),
-          timeout: 8000 // 8 second timeout
-        });
-        
-        // Try to get auth ticket
-        try {
-          const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-          
-          // Get node status
-          const statusResponse = await axiosInstance.get(
-            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
-            { 
-              headers: {
-                'Cookie': `PVEAuthCookie=${ticket}`
-              }
-            }
-          );
-          
-          const statusData = statusResponse.data.data || {};
-          
-          // Update node status to online
-          node.status = 'online';
-          clusterStats.totalNodes++;
-          clusterStats.onlineNodes++;
-          
-          // Add CPU, memory, and storage data
-          const cpuInfo = statusData.cpuinfo || {};
-          const memory = statusData.memory || {};
-          const rootfs = statusData.rootfs || {};
-          
-          // Add to cluster totals
-          clusterStats.totalCPUs += cpuInfo.cpus || 0;
-          clusterStats.cpuUsage += statusData.cpu || 0; // Will average later
-          clusterStats.totalMemory += memory.total || 0;
-          clusterStats.usedMemory += memory.used || 0;
-          clusterStats.totalStorage += rootfs.total || 0;
-          clusterStats.usedStorage += rootfs.used || 0;
-          
-          // Get network data
-          const networkResponse = await axiosInstance.get(
-            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata?ds=netin&ds=netout&timeframe=hour`,
-            { 
-              headers: {
-                'Cookie': `PVEAuthCookie=${ticket}`
-              }
-            }
-          );
-          
-          const networkData = networkResponse.data.data || [];
-          if (networkData.length > 0) {
-            // Get the most recent network data point
-            const latestNetData = networkData[networkData.length - 1];
-            networkUsage.inbound += latestNetData.netin || 0;
-            networkUsage.outbound += latestNetData.netout || 0;
-          }
-          
-          // Get VMs
-          const vmsResponse = await axiosInstance.get(
-            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu`,
-            { 
-              headers: {
-                'Cookie': `PVEAuthCookie=${ticket}`
-              }
-            }
-          );
-          
-          const vms = vmsResponse.data.data || [];
-          clusterStats.totalVMs += vms.length;
-          clusterStats.runningVMs += vms.filter(vm => vm.status === 'running').length;
-          
-          // Get containers
-          const containersResponse = await axiosInstance.get(
-            `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc`,
-            { 
-              headers: {
-                'Cookie': `PVEAuthCookie=${ticket}`
-              }
-            }
-          );
-          
-          const containers = containersResponse.data.data || [];
-          clusterStats.totalContainers += containers.length;
-          clusterStats.runningContainers += containers.filter(ct => ct.status === 'running').length;
-          
-          // Add node details
-          nodeDetails.push({
-            id: node.id,
-            name: node.name,
-            hostname: node.api_host,
-            port: node.api_port,
-            status: node.status,
-            cpus: cpuInfo.cpus || 0,
-            cpu_usage: statusData.cpu || 0,
-            memory_total: memory.total || 0,
-            memory_used: memory.used || 0,
-            storage_total: rootfs.total || 0,
-            storage_used: rootfs.used || 0,
-            vms: vms.length,
-            running_vms: vms.filter(vm => vm.status === 'running').length,
-            containers: containers.length,
-            running_containers: containers.filter(ct => ct.status === 'running').length
-          });
-          
-          // Update node status in the database
-          await pool.query(
-            'UPDATE nodes SET node_status = $1 WHERE id = $2',
-            ['online', node.id]
-          );
-          
-        } catch (authError) {
-          console.error(`Authentication or API error for node ${node.name}:`, authError.message);
-          
-          // Update stats to count this as an offline node
-          clusterStats.totalNodes++;
-          clusterStats.offlineNodes++;
-          
-          // Add node with error status
-          nodeDetails.push({
-            id: node.id,
-            name: node.name,
-            hostname: node.api_host,
-            port: node.api_port,
-            status: 'offline',
-            error: authError.message
-          });
-          
-          // Update node status in the database
-          await pool.query(
-            'UPDATE nodes SET node_status = $1 WHERE id = $2',
-            ['offline', node.id]
-          );
-        }
-      } catch (nodeError) {
-        console.error(`Error processing node ${dbNode.name}:`, nodeError.message);
-        
-        // Update stats to count this as an unknown node
-        clusterStats.totalNodes++;
-        clusterStats.offlineNodes++;
-        
-        // Add node with error status
-        nodeDetails.push({
-          id: dbNode.id,
-          name: dbNode.name,
-          hostname: dbNode.hostname,
-          port: dbNode.port || 8006,
-          status: 'unknown',
-          error: nodeError.message
-        });
       }
-    }
-    
-    // Average CPU usage across all online nodes
-    if (clusterStats.onlineNodes > 0) {
-      clusterStats.cpuUsage = clusterStats.cpuUsage / clusterStats.onlineNodes;
-    }
-    
-    // Reset totalNodes to match actual node count
-    clusterStats.totalNodes = nodeDetails.length;
-    
-    // Fix possible inconsistencies in node status counts by directly counting from nodeDetails
-    clusterStats.onlineNodes = nodeDetails.filter(node => node.status === 'online').length;
-    clusterStats.offlineNodes = nodeDetails.filter(node => node.status === 'offline').length;
-    clusterStats.warningNodes = nodeDetails.filter(node => node.status === 'unknown' || node.status === 'warning').length;
-    
-    // Consistency check - log if still mismatched
-    if (clusterStats.onlineNodes + clusterStats.offlineNodes + clusterStats.warningNodes !== clusterStats.totalNodes) {
-      console.log('Node count mismatch remains after correction!');
-      console.log(`totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}, warningNodes=${clusterStats.warningNodes}`);
-    }
-    
-    // Debug output before sending to client
-    console.log('Dashboard API response stats:', {
-      totalNodes: clusterStats.totalNodes,
-      onlineNodes: clusterStats.onlineNodes,
-      offlineNodes: clusterStats.offlineNodes,
-      nodeCount: nodeDetails.length,
-      totalCPUs: clusterStats.totalCPUs,
-      totalMemory: clusterStats.totalMemory
-    });
-    
-    res.json({
-      success: true,
-      cluster: {
-        nodes: nodeDetails,
-        stats: clusterStats,
-        networkUsage
-      }
-    });
-  } catch (err) {
-    console.error('Error fetching dashboard data:', err);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to fetch dashboard data' 
-    });
-  }
-});
-
-app.get('/api/vms', async (req, res) => {
-  try {
-    // Get all nodes from database
-    const nodesResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes'
     );
     
-    if (nodesResult.rowCount === 0) {
-      return res.json({
-        success: true,
-        vms: []
-      });
+    if (response.data && response.data.data) {
+      const { ticket, CSRFPreventionToken } = response.data.data;
+      return { ticket, CSRFPreventionToken };
+    } else {
+      throw new Error('Authentication failed: Invalid response from Proxmox API');
     }
-    
-    const nodes = nodesResult.rows;
-    let allVMs = [];
-    
-    // For each node, get VMs
-    for (const dbNode of nodes) {
-      try {
-        // Map to expected format for API calls
-        const node = {
-          name: dbNode.name,
-          api_host: dbNode.hostname,
-          api_port: dbNode.port || 8006,
-          api_username: dbNode.username,
-          api_password: dbNode.password,
-          api_realm: 'pam',
-          use_ssl: true,
-          verify_ssl: false
-        };
-    
-        const protocol = node.use_ssl ? 'https' : 'http';
-        
-        // Create API client
-        const axiosInstance = axios.create({
-          httpsAgent: new https.Agent({
-            rejectUnauthorized: node.verify_ssl
-          }),
-          timeout: 5000 // 5 second timeout
-        });
-        
-        // Get auth ticket
-        const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-        
-        // Get VMs from node
-        const response = await axiosInstance.get(
-          `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu`,
-          { 
-            headers: {
-              'Cookie': `PVEAuthCookie=${ticket}`
-            }
-          }
-        );
-        
-        const nodeVMs = response.data.data || [];
-        
-        // Add node information to each VM
-        nodeVMs.forEach(vm => {
-          vm.node_id = dbNode.id;
-          vm.node_name = node.name;
-        });
-        
-        allVMs = [...allVMs, ...nodeVMs];
-      } catch (error) {
-        console.error(`Error fetching VMs from node ${dbNode.name}:`, error);
-        // Continue to next node even if this one fails
-      }
+  } catch (error) {
+    console.error('Authentication error:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
     }
-    
-    res.json({
-      success: true,
-      vms: allVMs
-    });
-  } catch (err) {
-    console.error('Error fetching all VMs:', err);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to fetch VMs' 
-    });
+    throw new Error(`Authentication failed: ${error.message}`);
   }
-});
-
-app.get('/api/containers', async (req, res) => {
-  try {
-    // Get all nodes from database
-    const nodesResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes'
-    );
-    
-    if (nodesResult.rowCount === 0) {
-      return res.json({
-        success: true,
-        containers: []
-      });
-    }
-    
-    const nodes = nodesResult.rows;
-    let allContainers = [];
-    
-    // For each node, get containers
-    for (const dbNode of nodes) {
-      try {
-        // Map to expected format for API calls
-        const node = {
-          name: dbNode.name,
-          api_host: dbNode.hostname,
-          api_port: dbNode.port || 8006,
-          api_username: dbNode.username,
-          api_password: dbNode.password,
-          api_realm: 'pam',
-          use_ssl: true,
-          verify_ssl: false
-        };
-    
-        const protocol = node.use_ssl ? 'https' : 'http';
-        
-        // Create API client
-        const axiosInstance = axios.create({
-          httpsAgent: new https.Agent({
-            rejectUnauthorized: node.verify_ssl
-          }),
-          timeout: 5000 // 5 second timeout
-        });
-        
-        // Get auth ticket
-        const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-        
-        // Get containers from node
-        const response = await axiosInstance.get(
-          `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc`,
-          { 
-            headers: {
-              'Cookie': `PVEAuthCookie=${ticket}`
-            }
-          }
-        );
-        
-        const nodeContainers = response.data.data || [];
-        
-        // Add node information to each container
-        nodeContainers.forEach(container => {
-          container.node_id = dbNode.id;
-          container.node_name = node.name;
-        });
-        
-        allContainers = [...allContainers, ...nodeContainers];
-      } catch (error) {
-        console.error(`Error fetching containers from node ${dbNode.name}:`, error);
-        // Continue to next node even if this one fails
-      }
-    }
-    
-    res.json({
-      success: true,
-      containers: allContainers
-    });
-  } catch (err) {
-    console.error('Error fetching all containers:', err);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to fetch containers' 
-    });
-  }
-});
-
+}
 
 // Initialize database tables
 async function initializeDatabase() {
   try {
-    // Check for admin user in existing users table
-    try {
-      const adminUser = await pool.query(
-        'SELECT * FROM users WHERE username = $1',
-        ['admin']
-      );
+    // Create users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password VARCHAR(100) NOT NULL,
+        email VARCHAR(100),
+        role VARCHAR(20) DEFAULT 'user',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-      if (adminUser.rowCount === 0) {
-        // Hash password 'admin'
-        const hashedPassword = await bcrypt.hash('admin', 10);
-        
-        // Insert admin user
-        await pool.query(
-          'INSERT INTO users (username, password, email, is_admin) VALUES ($1, $2, $3, $4)',
-          ['admin', hashedPassword, 'admin@example.com', true]
-        );
-        
-        console.log('Admin user created');
-      }
-    } catch (userErr) {
-      console.error('Error with users table, it may not exist yet:', userErr);
-      
-      // Create users table if it doesn't exist
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id SERIAL PRIMARY KEY,
-          username VARCHAR(50) UNIQUE NOT NULL,
-          password VARCHAR(255) NOT NULL,
-          email VARCHAR(100),
-          is_admin BOOLEAN DEFAULT false,
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `);
-      
-      // Insert admin user
+    // Create sessions table for connect-pg-simple
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        sid varchar NOT NULL COLLATE "default",
+        sess json NOT NULL,
+        expire timestamp(6) NOT NULL,
+        CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+      )
+    `);
+
+    // Create proxmox_nodes table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS proxmox_nodes (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) NOT NULL,
+        api_host VARCHAR(100) NOT NULL,
+        api_port INTEGER DEFAULT 8006,
+        api_username VARCHAR(50) NOT NULL,
+        api_password VARCHAR(100) NOT NULL,
+        api_realm VARCHAR(20) DEFAULT 'pam',
+        ssh_host VARCHAR(100),
+        ssh_port INTEGER DEFAULT 22,
+        ssh_username VARCHAR(50),
+        ssh_password VARCHAR(100),
+        use_ssl BOOLEAN DEFAULT TRUE,
+        verify_ssl BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create activity_log table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        action VARCHAR(100) NOT NULL,
+        target_type VARCHAR(50),
+        target_id VARCHAR(50),
+        details TEXT,
+        status VARCHAR(20),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create vm_templates table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS vm_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        cores INTEGER DEFAULT 1,
+        memory INTEGER DEFAULT 1024,
+        disk_size INTEGER DEFAULT 10,
+        os_type VARCHAR(50),
+        os_version VARCHAR(50),
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create lxc_templates table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lxc_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        cores INTEGER DEFAULT 1,
+        memory INTEGER DEFAULT 512,
+        disk_size INTEGER DEFAULT 5,
+        os_template VARCHAR(100),
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Check if admin user exists, create if not
+    const adminResult = await pool.query('SELECT * FROM users WHERE username = $1', ['admin']);
+    if (adminResult.rowCount === 0) {
       const hashedPassword = await bcrypt.hash('admin', 10);
       await pool.query(
-        'INSERT INTO users (username, password, email, is_admin) VALUES ($1, $2, $3, $4)',
-        ['admin', hashedPassword, 'admin@example.com', true]
+        'INSERT INTO users (username, password, role) VALUES ($1, $2, $3)',
+        ['admin', hashedPassword, 'admin']
       );
-      
-      console.log('Users table created and admin user created');
-    }
-    
-    // Check if template tables exist, create if they don't
-    try {
-      await pool.query('SELECT COUNT(*) FROM vm_templates');
-    } catch (err) {
-      // VM templates table doesn't exist, create it
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS vm_templates (
-          id SERIAL PRIMARY KEY,
-          name VARCHAR(100) NOT NULL,
-          cores INTEGER DEFAULT 1,
-          memory INTEGER DEFAULT 1024,
-          disk_size INTEGER DEFAULT 10,
-          os_type VARCHAR(50),
-          description TEXT,
-          created_at TIMESTAMP DEFAULT NOW(),
-          user_id INTEGER REFERENCES users(id)
-        );
-      `);
-      console.log('VM templates table created');
-    }
-    
-    // Check if LXC templates table exists
-    try {
-      await pool.query('SELECT COUNT(*) FROM lxc_templates');
-    } catch (err) {
-      // LXC templates table doesn't exist, create it
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS lxc_templates (
-          id SERIAL PRIMARY KEY,
-          name VARCHAR(100) NOT NULL,
-          cores INTEGER DEFAULT 1,
-          memory INTEGER DEFAULT 512,
-          disk_size INTEGER DEFAULT 8,
-          template VARCHAR(100),
-          description TEXT,
-          created_at TIMESTAMP DEFAULT NOW(),
-          user_id INTEGER REFERENCES users(id)
-        );
-      `);
-      console.log('LXC templates table created');
-    }
-    
-    // Check if nodes table exists, create if it doesn't
-    try {
-      await pool.query('SELECT COUNT(*) FROM nodes');
-    } catch (err) {
-      // Nodes table doesn't exist, create it
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS nodes (
-          id SERIAL PRIMARY KEY,
-          name VARCHAR(100) NOT NULL,
-          hostname VARCHAR(255) NOT NULL,
-          port INTEGER DEFAULT 8006,
-          username VARCHAR(100) NOT NULL,
-          password VARCHAR(255) NOT NULL,
-          ssl_verify BOOLEAN DEFAULT false,
-          node_status VARCHAR(50) DEFAULT 'unknown',
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `);
-      console.log('Nodes table created');
+      console.log('Created default admin user');
     }
 
     console.log('Database initialization complete');
-  } catch (err) {
-    console.error('Database initialization error:', err);
+  } catch (error) {
+    console.error('Database initialization error:', error);
+    throw error;
   }
 }
 
 // API Routes
+
+// API status endpoint
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Proxmox Manager API is running',
+    serverTime: new Date().toISOString()
+  });
+});
 
 // Authentication routes
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    // Query for user
-    const result = await pool.query(
-      'SELECT * FROM users WHERE username = $1',
-      [username]
-    );
-    
-    if (result.rowCount === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Check password
+    // Check if user exists
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     const user = result.rows[0];
-    const passwordMatch = await bcrypt.compare(password, user.password);
     
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
     
-    // Remove password from user object
-    delete user.password;
+    // Compare password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
     
-    // Store user in session
-    req.session.user = user;
-    req.session.isAuthenticated = true;
+    // Set user session
+    req.session.userId = user.id;
     
-    res.json({ user });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'An error occurred during login' });
+    // Update last login
+    await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+    
+    // Return user info (without password)
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ user: userWithoutPassword });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Node management routes
+app.get('/api/user', async (req, res) => {
+  try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Get user info
+    const result = await pool.query('SELECT id, username, email, role, created_at, last_login FROM users WHERE id = $1', [req.session.userId]);
+    const user = result.rows[0];
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ user });
+  } catch (error) {
+    console.error('User info error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      console.error('Logout error:', err);
+      return res.status(500).json({ error: 'Failed to logout' });
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  });
+});
+
+// Node Management Routes
 app.get('/api/nodes', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes');
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     
-    // Map existing schema to expected format in the frontend
-    const mappedNodes = result.rows.map(node => ({
-      id: node.id,
-      name: node.name,
-      api_host: node.hostname,
-      api_port: node.port || 8006,
-      api_username: node.username,
-      api_password: node.password,
-      api_realm: 'pam',
-      ssh_host: node.hostname,
-      ssh_port: 22,
-      ssh_username: node.username,
-      ssh_password: node.password,
-      use_ssl: true,
-      verify_ssl: node.ssl_verify || false,
-      created_at: node.created_at,
-      status: node.node_status || 'unknown',
-      node_status: node.node_status || 'unknown'
-    }));
+    // Get nodes from database
+    const result = await pool.query('SELECT * FROM proxmox_nodes');
+    const nodes = result.rows;
     
-    res.json(mappedNodes);
-  } catch (err) {
-    console.error('Error fetching nodes:', err);
-    res.status(500).json({ error: 'Failed to fetch nodes' });
+    // Get node status
+    for (const node of nodes) {
+      try {
+        const client = createProxmoxClient(
+          node.api_host,
+          node.api_port,
+          node.api_username,
+          node.api_password,
+          node.api_realm,
+          node.verify_ssl
+        );
+        
+        // Authenticate with Proxmox
+        const auth = await authenticateProxmox(
+          client,
+          node.api_username,
+          node.api_password,
+          node.api_realm
+        );
+        
+        // Get node status
+        const nodeInfoResponse = await client.get('/nodes', {
+          headers: {
+            'Cookie': `PVEAuthCookie=${auth.ticket}`
+          }
+        });
+        
+        // Update node status
+        if (nodeInfoResponse.data && nodeInfoResponse.data.data) {
+          const proxmoxNode = nodeInfoResponse.data.data.find(n => n.node === node.name);
+          if (proxmoxNode) {
+            node.status = proxmoxNode.status;
+            node.node_status = proxmoxNode.status;
+          } else {
+            node.status = 'offline';
+            node.node_status = 'offline';
+          }
+        } else {
+          node.status = 'unknown';
+          node.node_status = 'unknown';
+        }
+      } catch (error) {
+        console.error(`Error getting status for node ${node.name}:`, error.message);
+        node.status = 'offline';
+        node.node_status = 'offline';
+      }
+    }
+    
+    res.json(nodes);
+  } catch (error) {
+    console.error('Error getting nodes:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 app.post('/api/nodes', async (req, res) => {
-  const {
-    name,
-    api_host, // hostname in our db
-    api_port, // port in our db
-    api_username, // username in our db
-    api_password, // password in our db
-    api_realm,
-    ssh_host,
-    ssh_port,
-    ssh_username,
-    ssh_password,
-    use_ssl,
-    verify_ssl,
-    user_id
-  } = req.body;
-  
   try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const {
+      name,
+      api_host,
+      api_port,
+      api_username,
+      api_password,
+      api_realm,
+      ssh_host,
+      ssh_port,
+      ssh_username,
+      ssh_password,
+      use_ssl,
+      verify_ssl
+    } = req.body;
+    
+    // Validate required fields
+    if (!name || !api_host || !api_port || !api_username || !api_password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Test connection to Proxmox API
+    try {
+      const client = createProxmoxClient(
+        api_host,
+        api_port,
+        api_username,
+        api_password,
+        api_realm || 'pam',
+        verify_ssl || false
+      );
+      
+      await authenticateProxmox(
+        client,
+        api_username,
+        api_password,
+        api_realm || 'pam'
+      );
+    } catch (error) {
+      return res.status(400).json({ 
+        error: 'Failed to connect to Proxmox API',
+        details: error.message
+      });
+    }
+    
+    // Insert node into database
     const result = await pool.query(
-      `INSERT INTO nodes (
-        name, hostname, port, username, password, ssl_verify, node_status, created_at
-      ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      RETURNING id, name, hostname, port, username, node_status, created_at`,
+      `INSERT INTO proxmox_nodes (
+        name, api_host, api_port, api_username, api_password, api_realm,
+        ssh_host, ssh_port, ssh_username, ssh_password, use_ssl, verify_ssl
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [
-        name, 
-        api_host, // Use api_host as hostname
-        api_port || 8006, // Use api_port as port
-        api_username, // Use api_username as username
-        api_password, // Use api_password as password
-        verify_ssl || false, // Use verify_ssl as ssl_verify
-        'unknown' // Set status to unknown by default - will be determined by connection test
+        name,
+        api_host,
+        api_port,
+        api_username,
+        api_password,
+        api_realm || 'pam',
+        ssh_host || api_host,
+        ssh_port || 22,
+        ssh_username || api_username,
+        ssh_password || api_password,
+        use_ssl !== undefined ? use_ssl : true,
+        verify_ssl || false
       ]
     );
     
-    // Map to the expected format for the frontend
-    const node = result.rows[0];
-    const mappedNode = {
-      id: node.id,
-      name: node.name,
-      api_host: node.hostname,
-      api_port: node.port || 8006,
-      api_username: node.username,
-      api_password: null, // Don't send password back to client
-      api_realm: 'pam',
-      ssh_host: node.hostname,
-      ssh_port: 22,
-      ssh_username: node.username,
-      ssh_password: null, // Don't send password back to client
-      use_ssl: true,
-      verify_ssl: verify_ssl || false,
-      status: node.node_status || 'unknown', // Use node_status but default to unknown
-      node_status: node.node_status || 'unknown', // Include both for consistency
-      created_at: node.created_at
-    };
+    // Log activity
+    await pool.query(
+      'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+      [req.session.userId, 'add_node', 'node', result.rows[0].id, `Added node ${name}`, 'success']
+    );
     
-    res.status(201).json(mappedNode);
-  } catch (err) {
-    console.error('Error adding node:', err);
-    res.status(500).json({ error: 'Failed to add node: ' + err.message });
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error adding node:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 app.delete('/api/nodes/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM nodes WHERE id = $1', [req.params.id]);
-    res.status(204).send();
-  } catch (err) {
-    console.error('Error deleting node:', err);
-    res.status(500).json({ error: 'Failed to delete node' });
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const nodeId = req.params.id;
+    
+    // Get node info before deletion
+    const nodeResult = await pool.query('SELECT * FROM proxmox_nodes WHERE id = $1', [nodeId]);
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodeResult.rows[0];
+    
+    // Delete node
+    await pool.query('DELETE FROM proxmox_nodes WHERE id = $1', [nodeId]);
+    
+    // Log activity
+    await pool.query(
+      'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+      [req.session.userId, 'delete_node', 'node', nodeId, `Deleted node ${node.name}`, 'success']
+    );
+    
+    res.json({ success: true, message: 'Node deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting node:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Test connection to Proxmox API
-app.post('/api/test-connection', async (req, res) => {
-  const { host, port, username, password, realm, ssl, verify } = req.body;
-  
-  // Validate input
-  if (!host || !port || !username || !password) {
-    return res.status(400).json({
-      success: false, 
-      message: 'Missing required connection parameters'
-    });
-  }
-  
-  console.log(`Testing connection to ${host}:${port} with credentials: ${username}`);
-  
-  // Format the username correctly for Proxmox authentication
-  // Format is username@realm - do not add @realm if username already contains it
-  const formattedUsername = username.includes('@') ? username : `${username}@${realm}`;
-  
-  // Protocol based on ssl setting
-  const protocol = ssl ? 'https' : 'http';
-  
-  // Create axios instance with appropriate SSL configuration
-  const axiosInstance = axios.create({
-    httpsAgent: new https.Agent({
-      rejectUnauthorized: verify === true
-    }),
-    timeout: 8000 // 8 second timeout
-  });
-  
+app.post('/api/nodes/test-connection', async (req, res) => {
   try {
-    // Log sanitized authentication attempt
-    console.log('Authenticating with Proxmox API...');
-    console.log(`Authentication details: user=${formattedUsername}, password=[REDACTED]`);
+    const {
+      api_host,
+      api_port,
+      api_username,
+      api_password,
+      api_realm,
+      verify_ssl
+    } = req.body;
     
-    // Try different authentication methods
-    let authResponse;
-    try {
-      // Method 1: Form data with proper encoding
-      authResponse = await axiosInstance.post(
-        `${protocol}://${host}:${port}/api2/json/access/ticket`,
-        `username=${encodeURIComponent(formattedUsername)}&password=${encodeURIComponent(password)}`,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        }
-      );
-    } catch (firstErr) {
-      console.log('First authentication method failed, trying alternative approach');
-      
-      // Method 2: JSON data
-      authResponse = await axiosInstance.post(
-        `${protocol}://${host}:${port}/api2/json/access/ticket`,
-        {
-          username: formattedUsername,
-          password: password
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+    // Validate required fields
+    if (!api_host || !api_port || !api_username || !api_password) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    console.log('Authentication successful, got ticket');
+    console.log(`Testing connection to ${api_host}:${api_port} with credentials ${api_username}`);
     
-    // Extract the ticket and CSRF token
-    const ticket = authResponse.data.data.ticket;
-    const csrfToken = authResponse.data.data.CSRFPreventionToken;
-    
-    // Now make a request using the ticket
-    const response = await axiosInstance.get(
-      `${protocol}://${host}:${port}/api2/json/version`,
-      {
-        headers: {
-          'Cookie': `PVEAuthCookie=${ticket}`
-        }
-      }
+    // Create Proxmox API client
+    const client = createProxmoxClient(
+      api_host,
+      api_port,
+      api_username,
+      api_password,
+      api_realm || 'pam',
+      verify_ssl || false
     );
     
-    console.log('Connection successful! Response:', response.data);
+    // Authenticate with Proxmox
+    const auth = await authenticateProxmox(
+      client,
+      api_username,
+      api_password,
+      api_realm || 'pam'
+    );
+    
+    // Get nodes to test further API access
+    const nodesResponse = await client.get('/nodes', {
+      headers: {
+        'Cookie': `PVEAuthCookie=${auth.ticket}`
+      }
+    });
+    
+    // Get version info for additional validation
+    const versionResponse = await client.get('/version', {
+      headers: {
+        'Cookie': `PVEAuthCookie=${auth.ticket}`
+      }
+    });
     
     res.json({
       success: true,
-      message: 'Connection successful!',
-      data: response.data
+      message: 'Connection successful',
+      nodes: nodesResponse.data.data,
+      version: versionResponse.data.data
     });
-  } catch (err) {
-    console.error('API connection error:', err);
-    let errorMessage = 'Connection failed';
-    
-    if (err.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      console.error('Response error status:', err.response.status);
-      console.error('Response error data:', err.response.data);
-      errorMessage = `Status ${err.response.status}: ${err.response.statusText || 'Authentication failed'}`;
-      
-      // Add more detailed error if available
-      if (err.response.data && err.response.data.errors) {
-        errorMessage += ` - ${JSON.stringify(err.response.data.errors)}`;
-      }
-    } else if (err.request) {
-      // The request was made but no response was received
-      console.error('No response received from server');
-      errorMessage = 'No response from server. Please check if the server is reachable.';
-    } else {
-      // Something happened in setting up the request that triggered an Error
-      console.error('Error message:', err.message);
-      errorMessage = err.message;
+  } catch (error) {
+    console.error('Connection test error:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Connection failed',
+      message: error.message,
+      details: error.response ? error.response.data : null
+    });
+  }
+});
+
+// VM and Container Management
+
+// Get all VMs
+app.get('/api/vms', async (req, res) => {
+  try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    res.status(400).json({
-      success: false,
-      message: errorMessage
-    });
-  }
-});
-
-// Test SSH connection
-app.post('/api/test-ssh', async (req, res) => {
-  const { host, port, username, password } = req.body;
-  
-  // Validate input
-  if (!host || !port || !username || !password) {
-    return res.status(400).json({
-      success: false, 
-      message: 'Missing required SSH connection parameters'
-    });
-  }
-  
-  const conn = new Client();
-  
-  conn.on('ready', () => {
-    conn.exec('uptime', (err, stream) => {
-      if (err) {
-        conn.end();
-        return res.status(400).json({
-          success: false,
-          message: 'Failed to execute command on remote server'
+    // Get nodes from database
+    const nodesResult = await pool.query('SELECT * FROM proxmox_nodes');
+    const nodes = nodesResult.rows;
+    
+    // Initialize empty VMs array
+    let allVMs = [];
+    
+    // For each node, get VMs
+    for (const node of nodes) {
+      try {
+        const client = createProxmoxClient(
+          node.api_host,
+          node.api_port,
+          node.api_username,
+          node.api_password,
+          node.api_realm,
+          node.verify_ssl
+        );
+        
+        // Authenticate with Proxmox
+        const auth = await authenticateProxmox(
+          client,
+          node.api_username,
+          node.api_password,
+          node.api_realm
+        );
+        
+        // Get nodes first
+        const nodeInfoResponse = await client.get('/nodes', {
+          headers: {
+            'Cookie': `PVEAuthCookie=${auth.ticket}`
+          }
         });
+        
+        const proxmoxNodes = nodeInfoResponse.data.data;
+        
+        // For each Proxmox node, get VMs
+        for (const proxmoxNode of proxmoxNodes) {
+          // Get VMs (qemu resources)
+          const vmResponse = await client.get(`/nodes/${proxmoxNode.node}/qemu`, {
+            headers: {
+              'Cookie': `PVEAuthCookie=${auth.ticket}`
+            }
+          });
+          
+          if (vmResponse.data && vmResponse.data.data) {
+            // Add node ID and node name to each VM
+            const vmsWithNodeInfo = vmResponse.data.data.map(vm => ({
+              ...vm, 
+              node_id: node.id,
+              node_name: proxmoxNode.node
+            }));
+            allVMs = [...allVMs, ...vmsWithNodeInfo];
+          }
+        }
+      } catch (error) {
+        console.error(`Error getting VMs for node ${node.name}:`, error.message);
       }
-      
-      let output = '';
-      
-      stream.on('data', (data) => {
-        output += data.toString();
-      });
-      
-      stream.on('end', () => {
-        conn.end();
-        res.json({
-          success: true,
-          message: 'SSH connection successful!',
-          data: { output }
-        });
-      });
-    });
-  });
-  
-  conn.on('error', (err) => {
-    console.error('SSH connection error:', err);
-    res.status(400).json({
-      success: false,
-      message: `SSH connection failed: ${err.message}`
-    });
-  });
-  
-  // Set a 5-second timeout for the SSH connection
-  conn.on('timeout', () => {
-    res.status(408).json({
-      success: false,
-      message: 'SSH connection timed out'
-    });
-  });
-  
-  conn.connect({
-    host,
-    port,
-    username,
-    password,
-    readyTimeout: 5000, // 5-second timeout
-    keepaliveInterval: 2000
-  });
+    }
+    
+    res.json({ success: true, vms: allVMs });
+  } catch (error) {
+    console.error('Error getting VMs:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Get node details
+// Get all containers
+app.get('/api/containers', async (req, res) => {
+  try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Get nodes from database
+    const nodesResult = await pool.query('SELECT * FROM proxmox_nodes');
+    const nodes = nodesResult.rows;
+    
+    // Initialize empty containers array
+    let allContainers = [];
+    
+    // For each node, get containers
+    for (const node of nodes) {
+      try {
+        const client = createProxmoxClient(
+          node.api_host,
+          node.api_port,
+          node.api_username,
+          node.api_password,
+          node.api_realm,
+          node.verify_ssl
+        );
+        
+        // Authenticate with Proxmox
+        const auth = await authenticateProxmox(
+          client,
+          node.api_username,
+          node.api_password,
+          node.api_realm
+        );
+        
+        // Get nodes first
+        const nodeInfoResponse = await client.get('/nodes', {
+          headers: {
+            'Cookie': `PVEAuthCookie=${auth.ticket}`
+          }
+        });
+        
+        const proxmoxNodes = nodeInfoResponse.data.data;
+        
+        // For each Proxmox node, get containers
+        for (const proxmoxNode of proxmoxNodes) {
+          // Get containers (lxc resources)
+          const containerResponse = await client.get(`/nodes/${proxmoxNode.node}/lxc`, {
+            headers: {
+              'Cookie': `PVEAuthCookie=${auth.ticket}`
+            }
+          });
+          
+          if (containerResponse.data && containerResponse.data.data) {
+            // Add node ID and node name to each container
+            const containersWithNodeInfo = containerResponse.data.data.map(container => ({
+              ...container, 
+              node_id: node.id,
+              node_name: proxmoxNode.node
+            }));
+            allContainers = [...allContainers, ...containersWithNodeInfo];
+          }
+        }
+      } catch (error) {
+        console.error(`Error getting containers for node ${node.name}:`, error.message);
+      }
+    }
+    
+    res.json({ success: true, containers: allContainers });
+  } catch (error) {
+    console.error('Error getting containers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get specific node details
 app.get('/api/nodes/:id', async (req, res) => {
   try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password, node_status, created_at FROM nodes WHERE id = $1',
-      [req.params.id]
-    );
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     
+    const nodeId = req.params.id;
+    
+    // Get node from database
+    const nodeResult = await pool.query('SELECT * FROM proxmox_nodes WHERE id = $1', [nodeId]);
     if (nodeResult.rowCount === 0) {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const dbNode = nodeResult.rows[0];
+    const node = nodeResult.rows[0];
     
-    // Map to expected format
-    const node = {
-      id: dbNode.id,
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      ssh_host: dbNode.hostname,
-      ssh_port: 22,
-      ssh_username: dbNode.username,
-      ssh_password: dbNode.password,
-      use_ssl: true,
-      verify_ssl: false,
-      status: dbNode.node_status || 'unknown',
-      node_status: dbNode.node_status || 'unknown'
-    };
-    
-    // Connect to Proxmox API to get real-time data
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
+    // Get node details from Proxmox API
     try {
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
+      const client = createProxmoxClient(
+        node.api_host,
+        node.api_port,
+        node.api_username,
+        node.api_password,
+        node.api_realm,
+        node.verify_ssl
+      );
       
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get cluster status
-      const clusterResponse = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/cluster/status`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
+      // Authenticate with Proxmox
+      const auth = await authenticateProxmox(
+        client,
+        node.api_username,
+        node.api_password,
+        node.api_realm
       );
       
       // Get node status
-      const nodeResponse = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/status`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
+      const nodeInfoResponse = await client.get('/nodes', {
+        headers: {
+          'Cookie': `PVEAuthCookie=${auth.ticket}`
+        }
+      });
+      
+      let nodeDetails = null;
+      
+      // Find the specific node in the response
+      if (nodeInfoResponse.data && nodeInfoResponse.data.data) {
+        const proxmoxNode = nodeInfoResponse.data.data.find(n => n.node === node.name);
+        if (proxmoxNode) {
+          nodeDetails = proxmoxNode;
+          
+          // Get more detailed node information
+          const nodeStatusResponse = await client.get(`/nodes/${node.name}/status`, {
+            headers: {
+              'Cookie': `PVEAuthCookie=${auth.ticket}`
+            }
+          });
+          
+          if (nodeStatusResponse.data && nodeStatusResponse.data.data) {
+            nodeDetails = {
+              ...nodeDetails,
+              ...nodeStatusResponse.data.data
+            };
           }
         }
-      );
-      
-      res.json({
-        node: node,
-        cluster: clusterResponse.data.data,
-        status: nodeResponse.data.data
-      });
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API:', apiError);
-      
-      // Return the node data without Proxmox API data
-      res.json({
-        node: node,
-        cluster: null,
-        status: null,
-        error: 'Failed to connect to Proxmox API'
-      });
-    }
-  } catch (err) {
-    console.error('Error fetching node details:', err);
-    res.status(500).json({ error: 'Failed to fetch node details' });
-  }
-});
-
-// VM management routes
-app.get('/api/nodes/:id/vms', async (req, res) => {
-  try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [req.params.id]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    
-    const dbNode = nodeResult.rows[0];
-    
-    // Map to expected format
-    const node = {
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get VMs from node
-      const response = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/qemu`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
-      );
-      
-      res.json(response.data.data || []);
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API:', apiError);
-      // Return empty array if we can't connect to API
-      res.json([]);
-    }
-  } catch (err) {
-    console.error('Error fetching VMs:', err);
-    res.status(500).json({ error: 'Failed to fetch VMs' });
-  }
-});
-
-// VM actions (start, stop, restart)
-app.post('/api/nodes/:nodeId/vms/:vmId/:action', async (req, res) => {
-  try {
-    const { nodeId, vmId, action } = req.params;
-    
-    // Validate action
-    if (!['start', 'stop', 'restart'].includes(action)) {
-      return res.status(400).json({ error: 'Invalid action. Supported actions: start, stop, restart' });
-    }
-    
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [nodeId]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    
-    const dbNode = nodeResult.rows[0];
-    
-    // Map to expected format
-    const node = {
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 10000 // Longer timeout for VM operations
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Map our action names to Proxmox API actions
-      const proxmoxAction = action === 'restart' ? 'reset' : action;
-      
-      // Perform the VM action
-      const response = await axiosInstance.post(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/qemu/${vmId}/status/${proxmoxAction}`,
-        {}, // Empty body, as parameters are in URL
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`,
-            'CSRFPreventionToken': csrfToken
-          }
-        }
-      );
-      
-      res.json({
-        success: true,
-        message: `VM ${action} operation initiated successfully`,
-        data: response.data
-      });
-    } catch (apiError) {
-      console.error(`Error performing VM ${action} operation:`, apiError);
-      
-      let errorMessage = `Failed to ${action} VM`;
-      if (apiError.response && apiError.response.data) {
-        errorMessage += `: ${apiError.response.data.message || JSON.stringify(apiError.response.data)}`;
       }
       
-      res.status(500).json({ 
-        success: false,
-        error: errorMessage
-      });
+      // If node details were found, return them with the database node
+      if (nodeDetails) {
+        res.json({
+          ...node,
+          proxmox_details: nodeDetails
+        });
+      } else {
+        // Otherwise, just return the database node
+        res.json(node);
+      }
+    } catch (error) {
+      console.error(`Error getting details for node ${node.name}:`, error.message);
+      res.json(node);
     }
-  } catch (err) {
-    console.error(`Error in VM ${req.params.action} operation:`, err);
-    res.status(500).json({ 
-      success: false,
-      error: `Failed to perform ${req.params.action} operation`
-    });
+  } catch (error) {
+    console.error('Error getting node details:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// LXC management routes
-app.get('/api/nodes/:id/containers', async (req, res) => {
+// Get dashboard data
+app.get('/api/dashboard', async (req, res) => {
   try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [req.params.id]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const dbNode = nodeResult.rows[0];
+    // Get nodes from database
+    const nodesResult = await pool.query('SELECT * FROM proxmox_nodes');
+    const nodes = nodesResult.rows;
     
-    // Map to expected format
-    const node = {
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
+    // Initialize dashboard data
+    const clusterData = {
+      nodes: [],
+      stats: {
+        totalNodes: nodes.length,
+        onlineNodes: 0,
+        warningNodes: 0,
+        offlineNodes: 0,
+        totalVMs: 0,
+        runningVMs: 0,
+        totalContainers: 0,
+        runningContainers: 0,
+        totalCPUs: 0,
+        cpuUsage: 0,
+        totalMemory: 0,
+        usedMemory: 0,
+        totalStorage: 0,
+        usedStorage: 0
+      },
+      networkUsage: {
+        inbound: 0,
+        outbound: 0
+      }
     };
     
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get LXC containers from node
-      const response = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${dbNode.name}/lxc`,
-        { 
+    // For each node, get data
+    for (const node of nodes) {
+      try {
+        const client = createProxmoxClient(
+          node.api_host,
+          node.api_port,
+          node.api_username,
+          node.api_password,
+          node.api_realm,
+          node.verify_ssl
+        );
+        
+        // Authenticate with Proxmox
+        const auth = await authenticateProxmox(
+          client,
+          node.api_username,
+          node.api_password,
+          node.api_realm
+        );
+        
+        // Get nodes
+        const nodeInfoResponse = await client.get('/nodes', {
           headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
+            'Cookie': `PVEAuthCookie=${auth.ticket}`
+          }
+        });
+        
+        const proxmoxNodes = nodeInfoResponse.data.data;
+        
+        // Process each Proxmox node
+        for (const proxmoxNode of proxmoxNodes) {
+          // Get node status
+          try {
+            const nodeStatusResponse = await client.get(`/nodes/${proxmoxNode.node}/status`, {
+              headers: {
+                'Cookie': `PVEAuthCookie=${auth.ticket}`
+              }
+            });
+            
+            if (nodeStatusResponse.data && nodeStatusResponse.data.data) {
+              const nodeStatus = nodeStatusResponse.data.data;
+              
+              // Determine node status
+              if (proxmoxNode.status === 'online') {
+                clusterData.stats.onlineNodes++;
+              } else if (proxmoxNode.status === 'unknown') {
+                clusterData.stats.warningNodes++;
+              } else {
+                clusterData.stats.offlineNodes++;
+              }
+              
+              // Get VMs for this node
+              const vmsResponse = await client.get(`/nodes/${proxmoxNode.node}/qemu`, {
+                headers: {
+                  'Cookie': `PVEAuthCookie=${auth.ticket}`
+                }
+              });
+              
+              const vms = vmsResponse.data.data || [];
+              clusterData.stats.totalVMs += vms.length;
+              clusterData.stats.runningVMs += vms.filter(vm => vm.status === 'running').length;
+              
+              // Get containers for this node
+              const containersResponse = await client.get(`/nodes/${proxmoxNode.node}/lxc`, {
+                headers: {
+                  'Cookie': `PVEAuthCookie=${auth.ticket}`
+                }
+              });
+              
+              const containers = containersResponse.data.data || [];
+              clusterData.stats.totalContainers += containers.length;
+              clusterData.stats.runningContainers += containers.filter(c => c.status === 'running').length;
+              
+              // Update CPU stats
+              if (nodeStatus.cpuinfo) {
+                clusterData.stats.totalCPUs += nodeStatus.cpuinfo.cpus || 0;
+              }
+              
+              // Update memory stats
+              if (nodeStatus.memory) {
+                clusterData.stats.totalMemory += nodeStatus.memory.total || 0;
+                clusterData.stats.usedMemory += nodeStatus.memory.used || 0;
+              }
+              
+              // Update storage stats
+              try {
+                const storageResponse = await client.get(`/nodes/${proxmoxNode.node}/storage`, {
+                  headers: {
+                    'Cookie': `PVEAuthCookie=${auth.ticket}`
+                  }
+                });
+                
+                const storages = storageResponse.data.data || [];
+                for (const storage of storages) {
+                  clusterData.stats.totalStorage += storage.total || 0;
+                  clusterData.stats.usedStorage += storage.used || 0;
+                }
+              } catch (error) {
+                console.error(`Error getting storage for node ${proxmoxNode.node}:`, error.message);
+              }
+              
+              // Get network statistics
+              try {
+                const rrdataResponse = await client.get(`/nodes/${proxmoxNode.node}/rrddata`, {
+                  headers: {
+                    'Cookie': `PVEAuthCookie=${auth.ticket}`
+                  },
+                  params: {
+                    timeframe: 'hour',
+                    cf: 'AVERAGE'
+                  }
+                });
+                
+                const rrdData = rrdataResponse.data.data;
+                if (rrdData && rrdData.length > 0) {
+                  // Get the most recent data point
+                  const latestData = rrdData[rrdData.length - 1];
+                  
+                  // Add network traffic to totals (if available)
+                  if (latestData.netin !== undefined) {
+                    clusterData.networkUsage.inbound += latestData.netin || 0;
+                  }
+                  
+                  if (latestData.netout !== undefined) {
+                    clusterData.networkUsage.outbound += latestData.netout || 0;
+                  }
+                  
+                  // Add CPU usage (average across all nodes)
+                  if (latestData.cpu !== undefined) {
+                    clusterData.stats.cpuUsage += latestData.cpu || 0;
+                  }
+                }
+              } catch (error) {
+                console.error(`Error getting RRD data for node ${proxmoxNode.node}:`, error.message);
+              }
+              
+              // Add node to the nodes array
+              clusterData.nodes.push({
+                id: node.id,
+                name: proxmoxNode.node,
+                status: proxmoxNode.status,
+                ip: node.api_host,
+                uptime: nodeStatus.uptime || 0,
+                cpu: nodeStatus.cpu || 0,
+                memory: nodeStatus.memory || { total: 0, used: 0, free: 0 },
+                vms: vms.length,
+                containers: containers.length
+              });
+            }
+          } catch (error) {
+            console.error(`Error getting status for node ${proxmoxNode.node}:`, error.message);
           }
         }
-      );
-      
-      res.json(response.data.data || []);
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API:', apiError);
-      // Return empty array if we can't connect to API
-      res.json([]);
+      } catch (error) {
+        console.error(`Error processing node ${node.name} for dashboard:`, error.message);
+      }
     }
-  } catch (err) {
-    console.error('Error fetching containers:', err);
-    res.status(500).json({ error: 'Failed to fetch containers' });
+    
+    // Calculate averages
+    if (clusterData.stats.onlineNodes > 0) {
+      clusterData.stats.cpuUsage = clusterData.stats.cpuUsage / clusterData.stats.onlineNodes;
+    }
+    
+    // Log what data we collected
+    console.log('Dashboard API response stats:', {
+      totalNodes: clusterData.stats.totalNodes,
+      onlineNodes: clusterData.stats.onlineNodes,
+      offlineNodes: clusterData.stats.offlineNodes,
+      nodeCount: clusterData.nodes.length,
+      totalCPUs: clusterData.stats.totalCPUs,
+      totalMemory: clusterData.stats.totalMemory
+    });
+    
+    res.json({ success: true, cluster: clusterData });
+  } catch (error) {
+    console.error('Error getting dashboard data:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
-// LXC container actions (start, stop, restart)
-app.post('/api/nodes/:nodeId/containers/:containerId/:action', async (req, res) => {
+// VM and Container actions
+app.post('/api/nodes/:nodeId/qemu/:vmId/action', async (req, res) => {
   try {
-    const { nodeId, containerId, action } = req.params;
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { nodeId, vmId } = req.params;
+    const { action } = req.body;
     
     // Validate action
-    if (!['start', 'stop', 'restart'].includes(action)) {
-      return res.status(400).json({ error: 'Invalid action. Supported actions: start, stop, restart' });
+    if (!['start', 'stop', 'reset', 'shutdown', 'suspend', 'resume'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action' });
     }
     
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [nodeId]
-    );
-    
+    // Get node from database
+    const nodeResult = await pool.query('SELECT * FROM proxmox_nodes WHERE id = $1', [nodeId]);
     if (nodeResult.rowCount === 0) {
       return res.status(404).json({ error: 'Node not found' });
     }
     
-    const dbNode = nodeResult.rows[0];
+    const node = nodeResult.rows[0];
     
-    // Map to expected format
-    const node = {
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
+    // Execute action on VM
     try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 10000 // Longer timeout for container operations
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Map our action names to Proxmox API actions
-      const proxmoxAction = action === 'restart' ? 'reset' : action;
-      
-      // Perform the container action
-      const response = await axiosInstance.post(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/lxc/${containerId}/status/${proxmoxAction}`,
-        {}, // Empty body, as parameters are in URL
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`,
-            'CSRFPreventionToken': csrfToken
-          }
-        }
+      const client = createProxmoxClient(
+        node.api_host,
+        node.api_port,
+        node.api_username,
+        node.api_password,
+        node.api_realm,
+        node.verify_ssl
       );
       
-      res.json({
-        success: true,
-        message: `Container ${action} operation initiated successfully`,
-        data: response.data
-      });
-    } catch (apiError) {
-      console.error(`Error performing container ${action} operation:`, apiError);
+      // Authenticate with Proxmox
+      const auth = await authenticateProxmox(
+        client,
+        node.api_username,
+        node.api_password,
+        node.api_realm
+      );
       
-      let errorMessage = `Failed to ${action} container`;
-      if (apiError.response && apiError.response.data) {
-        errorMessage += `: ${apiError.response.data.message || JSON.stringify(apiError.response.data)}`;
+      // Map the action to the Proxmox API endpoint
+      let apiAction = action;
+      if (action === 'reset') {
+        apiAction = 'reset';
       }
       
+      // Execute the action
+      const actionResponse = await client.post(`/nodes/${node.name}/qemu/${vmId}/status/${apiAction}`, {}, {
+        headers: {
+          'Cookie': `PVEAuthCookie=${auth.ticket}`,
+          'CSRFPreventionToken': auth.CSRFPreventionToken
+        }
+      });
+      
+      // Log activity
+      await pool.query(
+        'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+        [req.session.userId, `vm_${action}`, 'vm', vmId, `Performed ${action} on VM ${vmId} on node ${node.name}`, 'success']
+      );
+      
+      res.json({ 
+        success: true, 
+        message: `Action ${action} performed on VM ${vmId}`,
+        taskId: actionResponse.data.data
+      });
+    } catch (error) {
+      console.error(`Error performing action ${action} on VM ${vmId}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
+      
+      // Log failed activity
+      await pool.query(
+        'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+        [req.session.userId, `vm_${action}`, 'vm', vmId, `Failed to perform ${action} on VM ${vmId} on node ${node.name}: ${error.message}`, 'error']
+      );
+      
       res.status(500).json({ 
-        success: false,
-        error: errorMessage
+        error: 'Failed to perform action',
+        message: error.message,
+        details: error.response ? error.response.data : null
       });
     }
-  } catch (err) {
-    console.error(`Error in container ${req.params.action} operation:`, err);
-    res.status(500).json({ 
-      success: false,
-      error: `Failed to perform ${req.params.action} operation`
-    });
+  } catch (error) {
+    console.error('Error handling VM action:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Template management routes
+app.post('/api/nodes/:nodeId/lxc/:containerId/action', async (req, res) => {
+  try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { nodeId, containerId } = req.params;
+    const { action } = req.body;
+    
+    // Validate action
+    if (!['start', 'stop', 'restart', 'shutdown', 'suspend', 'resume'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+    
+    // Get node from database
+    const nodeResult = await pool.query('SELECT * FROM proxmox_nodes WHERE id = $1', [nodeId]);
+    if (nodeResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodeResult.rows[0];
+    
+    // Execute action on container
+    try {
+      const client = createProxmoxClient(
+        node.api_host,
+        node.api_port,
+        node.api_username,
+        node.api_password,
+        node.api_realm,
+        node.verify_ssl
+      );
+      
+      // Authenticate with Proxmox
+      const auth = await authenticateProxmox(
+        client,
+        node.api_username,
+        node.api_password,
+        node.api_realm
+      );
+      
+      // Map the action to the Proxmox API endpoint
+      let apiAction = action;
+      if (action === 'restart') {
+        apiAction = 'restart';
+      }
+      
+      // Execute the action
+      const actionResponse = await client.post(`/nodes/${node.name}/lxc/${containerId}/status/${apiAction}`, {}, {
+        headers: {
+          'Cookie': `PVEAuthCookie=${auth.ticket}`,
+          'CSRFPreventionToken': auth.CSRFPreventionToken
+        }
+      });
+      
+      // Log activity
+      await pool.query(
+        'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+        [req.session.userId, `container_${action}`, 'container', containerId, `Performed ${action} on container ${containerId} on node ${node.name}`, 'success']
+      );
+      
+      res.json({ 
+        success: true, 
+        message: `Action ${action} performed on container ${containerId}`,
+        taskId: actionResponse.data.data
+      });
+    } catch (error) {
+      console.error(`Error performing action ${action} on container ${containerId}:`, error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
+      
+      // Log failed activity
+      await pool.query(
+        'INSERT INTO activity_log (user_id, action, target_type, target_id, details, status) VALUES ($1, $2, $3, $4, $5, $6)',
+        [req.session.userId, `container_${action}`, 'container', containerId, `Failed to perform ${action} on container ${containerId} on node ${node.name}: ${error.message}`, 'error']
+      );
+      
+      res.status(500).json({ 
+        error: 'Failed to perform action',
+        message: error.message,
+        details: error.response ? error.response.data : null
+      });
+    }
+  } catch (error) {
+    console.error('Error handling container action:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Templates management
 app.get('/api/templates/vm', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM vm_templates');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching VM templates:', err);
-    res.status(500).json({ error: 'Failed to fetch VM templates' });
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Get VM templates from database
+    const templatesResult = await pool.query('SELECT * FROM vm_templates');
+    const templates = templatesResult.rows;
+    
+    res.json(templates);
+  } catch (error) {
+    console.error('Error getting VM templates:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 app.post('/api/templates/vm', async (req, res) => {
-  const {
-    name,
-    cores,
-    memory,
-    disk_size,
-    os_type,
-    description,
-    user_id
-  } = req.body;
-  
   try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const {
+      name,
+      description,
+      cores,
+      memory,
+      disk_size,
+      os_type,
+      os_version
+    } = req.body;
+    
+    // Validate required fields
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    // Insert template into database
     const result = await pool.query(
-      `INSERT INTO vm_templates (name, cores, memory, disk_size, os_type, description, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [name, cores, memory, disk_size, os_type, description, user_id]
+      `INSERT INTO vm_templates (
+        name, description, cores, memory, disk_size, os_type, os_version, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        name,
+        description || '',
+        cores || 1,
+        memory || 1024,
+        disk_size || 10,
+        os_type || '',
+        os_version || '',
+        req.session.userId
+      ]
     );
     
     res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Error adding VM template:', err);
-    res.status(500).json({ error: 'Failed to add VM template' });
-  }
-});
-
-app.delete('/api/templates/vm/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM vm_templates WHERE id = $1', [req.params.id]);
-    res.status(204).send();
-  } catch (err) {
-    console.error('Error deleting VM template:', err);
-    res.status(500).json({ error: 'Failed to delete VM template' });
+  } catch (error) {
+    console.error('Error creating VM template:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 app.get('/api/templates/lxc', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM lxc_templates');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching LXC templates:', err);
-    res.status(500).json({ error: 'Failed to fetch LXC templates' });
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Get LXC templates from database
+    const templatesResult = await pool.query('SELECT * FROM lxc_templates');
+    const templates = templatesResult.rows;
+    
+    res.json(templates);
+  } catch (error) {
+    console.error('Error getting LXC templates:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 app.post('/api/templates/lxc', async (req, res) => {
-  const {
-    name,
-    cores,
-    memory,
-    disk_size,
-    template,
-    description,
-    user_id
-  } = req.body;
-  
   try {
+    // Check if user is logged in
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const {
+      name,
+      description,
+      cores,
+      memory,
+      disk_size,
+      os_template
+    } = req.body;
+    
+    // Validate required fields
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    // Insert template into database
     const result = await pool.query(
-      `INSERT INTO lxc_templates (name, cores, memory, disk_size, template, description, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [name, cores, memory, disk_size, template, description, user_id]
+      `INSERT INTO lxc_templates (
+        name, description, cores, memory, disk_size, os_template, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        name,
+        description || '',
+        cores || 1,
+        memory || 512,
+        disk_size || 5,
+        os_template || '',
+        req.session.userId
+      ]
     );
     
     res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Error adding LXC template:', err);
-    res.status(500).json({ error: 'Failed to add LXC template' });
+  } catch (error) {
+    console.error('Error creating LXC template:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.delete('/api/templates/lxc/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM lxc_templates WHERE id = $1', [req.params.id]);
-    res.status(204).send();
-  } catch (err) {
-    console.error('Error deleting LXC template:', err);
-    res.status(500).json({ error: 'Failed to delete LXC template' });
-  }
-});
-
-// Storage management routes
-app.get('/api/nodes/:nodeId/storage', async (req, res) => {
-  try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [req.params.nodeId]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    
-    const dbNode = nodeResult.rows[0];
-    
-    // Map to expected format
-    const node = {
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get storage from node
-      const response = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/storage`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
-      );
-      
-      res.json({
-        success: true,
-        node: node.name,
-        storage: response.data.data || []
-      });
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API for storage data:', apiError);
-      res.status(500).json({ 
-        success: false,
-        error: 'Failed to fetch storage data' 
-      });
-    }
-  } catch (err) {
-    console.error('Error fetching node storage:', err);
-    res.status(500).json({ error: 'Failed to fetch node storage' });
-  }
-});
-
-// Network management routes
-app.get('/api/nodes/:nodeId/network', async (req, res) => {
-  try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [req.params.nodeId]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    
-    const dbNode = nodeResult.rows[0];
-    
-    // Map to expected format
-    const node = {
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get network from node
-      const response = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/network`,
-        { 
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
-      );
-      
-      res.json({
-        success: true,
-        node: node.name,
-        network: response.data.data || []
-      });
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API for network data:', apiError);
-      res.status(500).json({ 
-        success: false,
-        error: 'Failed to fetch network data' 
-      });
-    }
-  } catch (err) {
-    console.error('Error fetching node network:', err);
-    res.status(500).json({ error: 'Failed to fetch node network' });
-  }
-});
-
-// Monitoring endpoints
-app.get('/api/monitoring/node/:id', async (req, res) => {
-  try {
-    // Get node details from database
-    const nodeResult = await pool.query(
-      'SELECT id, name, hostname, port, username, password FROM nodes WHERE id = $1',
-      [req.params.id]
-    );
-    
-    if (nodeResult.rowCount === 0) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    
-    const dbNode = nodeResult.rows[0];
-    
-    // Map to expected format
-    const node = {
-      name: dbNode.name,
-      api_host: dbNode.hostname,
-      api_port: dbNode.port || 8006,
-      api_username: dbNode.username,
-      api_password: dbNode.password,
-      api_realm: 'pam',
-      use_ssl: true,
-      verify_ssl: false
-    };
-    
-    const protocol = node.use_ssl ? 'https' : 'http';
-    
-    try {
-      // Connect to Proxmox API
-      const axiosInstance = axios.create({
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: node.verify_ssl
-        }),
-        timeout: 5000 // 5 second timeout
-      });
-      
-      // First authenticate to get a ticket
-      const { ticket, csrfToken } = await getProxmoxAuthTicket(node);
-      
-      // Get node RRD data for CPU, memory, network, etc.
-      const rrdResponse = await axiosInstance.get(
-        `${protocol}://${node.api_host}:${node.api_port}/api2/json/nodes/${node.name}/rrddata`,
-        { 
-          params: {
-            timeframe: 'hour',
-            cf: 'AVERAGE'
-          },
-          headers: {
-            'Cookie': `PVEAuthCookie=${ticket}`
-          }
-        }
-      );
-      
-      // Process and return the monitoring data
-      res.json({
-        node: node.name,
-        data: rrdResponse.data.data || []
-      });
-    } catch (apiError) {
-      console.error('Error connecting to Proxmox API for monitoring data:', apiError);
-      // Return empty data if we can't connect to API
-      res.json({
-        node: node.name,
-        data: [],
-        error: 'Failed to connect to Proxmox API'
-      });
-    }
-  } catch (err) {
-    console.error('Error fetching monitoring data:', err);
-    res.status(500).json({ error: 'Failed to fetch monitoring data' });
-  }
-});
-
-// For any other route, serve the main HTML file (Electron will handle the view)
+// Serve index.html for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -1853,14 +1299,41 @@ app.get('*', (req, res) => {
 // Initialize database and start server
 initializeDatabase()
   .then(() => {
-    app.listen(port, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${port}`);
-      console.log('Successfully connected to PostgreSQL database');
+    // Insert default Proxmox node if no nodes exist
+    return pool.query('SELECT COUNT(*) FROM proxmox_nodes')
+      .then(result => {
+        const count = parseInt(result.rows[0].count);
+        if (count === 0) {
+          // Add user's Proxmox node by default
+          return pool.query(
+            `INSERT INTO proxmox_nodes (
+              name, api_host, api_port, api_username, api_password, api_realm,
+              ssh_host, ssh_port, ssh_username, ssh_password, use_ssl, verify_ssl
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [
+              'pve1',
+              'pve1.ionutlab.com',
+              8006,
+              'root@pam',
+              'Poolamea01@',
+              'pam',
+              'pve1.ionutlab.com',
+              22,
+              'root@pam',
+              'Poolamea01@',
+              true,
+              false
+            ]
+          );
+        }
+      });
+  })
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
     });
   })
-  .catch(err => {
-    console.error('Failed to start server:', err);
+  .catch(error => {
+    console.error('Server initialization error:', error);
+    process.exit(1);
   });
-
-// Export the app for testing
-module.exports = app;

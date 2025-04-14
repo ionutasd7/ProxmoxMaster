@@ -3,6 +3,7 @@ import { API } from './api.js';
 import { AppState } from './state.js';
 import { Router } from './router.js';
 import { UI } from './ui.js';
+import { dashboardState } from './dashboard-state.js';
 import { AuthView } from './views/auth.js';
 import { DashboardView } from './views/dashboard.js';
 import { NodesView } from './views/nodes.js';
@@ -10,7 +11,7 @@ import { VMsView } from './views/vms.js';
 import { ContainersView } from './views/containers.js';
 import { StorageView } from './views/storage.js';
 import { NetworkView } from './views/network.js';
-import { UpdatesView } from './views/updates.js';
+import { TemplatesView } from './views/templates.js';
 import { SettingsView } from './views/settings.js';
 
 // Main Application Class
@@ -20,6 +21,7 @@ class App {
     this.api = new API();
     this.state = new AppState();
     this.ui = new UI(this);
+    window.dashboardState = dashboardState;
     
     // Register views
     this.registerViews();
@@ -27,10 +29,7 @@ class App {
     // Initialize router
     this.router = new Router(this);
     
-    // Setup event listeners
-    this.setupEventListeners();
-    
-    // Check authentication and initialize app
+    // Initialize the application
     this.init();
   }
   
@@ -44,108 +43,44 @@ class App {
       containers: new ContainersView(this),
       storage: new StorageView(this),
       network: new NetworkView(this),
-      updates: new UpdatesView(this),
+      templates: new TemplatesView(this),
       settings: new SettingsView(this)
     };
-  }
-  
-  // Setup global event listeners
-  setupEventListeners() {
-    // Handle navigation clicks
-    document.addEventListener('click', (e) => {
-      const navLink = e.target.closest('.nav-link');
-      if (navLink) {
-        e.preventDefault();
-        const route = navLink.dataset.route;
-        if (route) {
-          this.router.navigate(route);
-        }
-      }
-    });
-    
-    // Handle logout
-    document.addEventListener('click', (e) => {
-      if (e.target.id === 'logout-btn') {
-        e.preventDefault();
-        this.logout();
-      }
-    });
   }
   
   // Initialize application
   async init() {
     console.log('Initializing Proxmox Manager...');
     
-    // Preload the dashboard state module and make it globally available
     try {
-      const dashboardStateModule = await import('./dashboard-state.js');
-      window.dashboardState = dashboardStateModule.dashboardState;
-      console.log('Dashboard state module loaded globally');
-    } catch (stateError) {
-      console.warn('Error preloading dashboard state:', stateError);
-    }
-    
-    // Check API status
-    try {
+      // Check API status
       const status = await this.api.getStatus();
       console.log('API Status:', status);
       
-      // Check if user is logged in using session
+      // Check if user is logged in
       try {
         const userData = await this.api.getCurrentUser();
-        if (userData.user) {
+        
+        if (userData && userData.user) {
+          // User is logged in, set user and load app data
           this.state.setUser(userData.user);
+          await this.loadAppData();
+          
+          // Navigate to dashboard
           this.router.navigate('dashboard');
         } else {
+          // User is not logged in, navigate to auth page
           this.router.navigate('auth');
         }
       } catch (error) {
         console.error('Failed to get user data:', error);
+        
+        // Navigate to auth page
         this.router.navigate('auth');
       }
     } catch (error) {
       console.error('API is not available:', error);
       this.ui.showError('API server is not available. Please try again later.');
-      this.router.navigate('auth');
-    }
-  }
-  
-  // Handle login
-  async login(username, password) {
-    try {
-      this.ui.showLoading('Authenticating...');
-      const response = await this.api.login(username, password);
-      
-      if (response.user) {
-        this.state.setUser(response.user);
-        this.ui.hideLoading();
-        this.router.navigate('dashboard');
-        return true;
-      } else {
-        this.ui.hideLoading();
-        this.ui.showError('Login failed: ' + (response.error || 'Unknown error'));
-        return false;
-      }
-    } catch (error) {
-      this.ui.hideLoading();
-      this.ui.showError('Login failed: ' + error.message);
-      return false;
-    }
-  }
-  
-  // Handle logout
-  async logout() {
-    try {
-      this.ui.showLoading('Logging out...');
-      await this.api.logout();
-      this.state.clearUser();
-      this.ui.hideLoading();
-      this.router.navigate('auth');
-    } catch (error) {
-      console.error('Logout error:', error);
-      // Even if the API call fails, we should still clear the local state
-      this.state.clearUser();
-      this.ui.hideLoading();
       this.router.navigate('auth');
     }
   }
@@ -159,33 +94,73 @@ class App {
       const nodes = await this.api.getNodes();
       this.state.setNodes(nodes);
       
-      // Load VMs and containers only if we have nodes
-      if (nodes.length > 0) {
-        try {
-          const vms = await this.api.getVMs();
-          this.state.setVMs(vms.vms || []);
-        } catch (error) {
-          console.error('Failed to load VMs:', error);
-        }
-        
-        try {
-          const containers = await this.api.getContainers();
-          this.state.setContainers(containers.containers || []);
-        } catch (error) {
-          console.error('Failed to load containers:', error);
-        }
+      // Load VMs
+      try {
+        const vms = await this.api.getVMs();
+        this.state.setVMs(vms.vms || []);
+      } catch (vmError) {
+        console.error('Error loading VMs:', vmError);
       }
       
-      this.ui.hideLoading();
+      // Load containers
+      try {
+        const containers = await this.api.getContainers();
+        this.state.setContainers(containers.containers || []);
+      } catch (containerError) {
+        console.error('Error loading containers:', containerError);
+      }
+      
+      // Load dashboard data
+      try {
+        const dashboardData = await this.api.getDashboardData();
+        this.state.setDashboardData(dashboardData);
+      } catch (dashboardError) {
+        console.error('Error loading dashboard data:', dashboardError);
+      }
+      
+      // Load VM templates
+      try {
+        const vmTemplates = await this.api.getVMTemplates();
+        this.state.setVMTemplates(vmTemplates);
+      } catch (templateError) {
+        console.error('Error loading VM templates:', templateError);
+      }
+      
+      // Load LXC templates
+      try {
+        const lxcTemplates = await this.api.getLXCTemplates();
+        this.state.setLXCTemplates(lxcTemplates);
+      } catch (templateError) {
+        console.error('Error loading LXC templates:', templateError);
+      }
     } catch (error) {
-      console.error('Failed to load application data:', error);
+      console.error('Error loading application data:', error);
+      this.ui.showError('Failed to load data. Please try refreshing the page.');
+    } finally {
       this.ui.hideLoading();
-      this.ui.showError('Failed to load application data. Please try again.');
+    }
+  }
+  
+  // Logout user
+  async logout() {
+    this.ui.showLoading('Logging out...');
+    
+    try {
+      await this.api.logout();
+      this.state.clearUser();
+      dashboardState.clearState();
+      this.router.navigate('auth');
+      this.ui.showSuccess('Successfully logged out');
+    } catch (error) {
+      console.error('Error logging out:', error);
+      this.ui.showError('Failed to logout. Please try again.');
+    } finally {
+      this.ui.hideLoading();
     }
   }
 }
 
-// Initialize the application when DOM is loaded
+// Initialize the application when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new App();
 });

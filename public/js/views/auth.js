@@ -1,6 +1,6 @@
 /**
  * Authentication View
- * Handles the login page
+ * Handles user login and registration
  */
 export class AuthView {
   constructor(app) {
@@ -8,53 +8,48 @@ export class AuthView {
   }
   
   /**
-   * Render the auth view
+   * Render the authentication view
    */
   render() {
-    // Clear root element
-    this.app.ui.rootElement.innerHTML = this.getAuthHTML();
+    const appElement = document.getElementById('app');
+    if (!appElement) return;
     
-    // Add event listeners
-    this.addEventListeners();
-  }
-  
-  /**
-   * Get auth HTML
-   * @returns {string} Auth HTML
-   */
-  getAuthHTML() {
-    return `
+    appElement.innerHTML = `
       <div class="login-container">
         <div class="login-card">
           <div class="login-header">
             <h2>Proxmox Manager</h2>
-            <p>Log in to access your Proxmox infrastructure</p>
+            <p class="text-muted">Sign in to your account</p>
+          </div>
+          
+          <div id="login-error-message" class="alert alert-danger mb-3 d-none">
+            Invalid username or password
           </div>
           
           <form id="login-form">
-            <div class="form-group mb-3">
+            <div class="mb-3">
               <label for="username" class="form-label">Username</label>
-              <input type="text" id="username" class="form-control" placeholder="Enter username" value="admin" required>
+              <input type="text" class="form-control" id="username" value="admin" placeholder="Username" required>
             </div>
             
-            <div class="form-group mb-4">
+            <div class="mb-3">
               <label for="password" class="form-label">Password</label>
-              <input type="password" id="password" class="form-control" placeholder="Enter password" value="admin" required>
+              <input type="password" class="form-control" id="password" value="admin" placeholder="Password" required>
             </div>
             
-            <div id="login-error" class="alert alert-danger mb-3" style="display: none;"></div>
-            
-            <button type="submit" class="btn btn-primary w-100">
-              <i class="fas fa-sign-in-alt me-2"></i> Login
-            </button>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary">Sign In</button>
+            </div>
           </form>
           
-          <div class="mt-4 text-center">
-            <small class="text-muted">Default credentials: admin / admin</small>
+          <div class="mt-3 text-center text-muted">
+            <small>Default credentials: admin / admin</small>
           </div>
         </div>
       </div>
     `;
+    
+    this.addEventListeners();
   }
   
   /**
@@ -62,87 +57,76 @@ export class AuthView {
    */
   addEventListeners() {
     const loginForm = document.getElementById('login-form');
-    
-    // Add form submit listener
     if (loginForm) {
-      loginForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        this.handleLogin();
-      });
+      loginForm.addEventListener('submit', this.handleLogin.bind(this));
     }
   }
   
   /**
    * Handle login form submission
+   * @param {Event} event - Form submit event
    */
-  async handleLogin() {
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const loginError = document.getElementById('login-error');
+  async handleLogin(event) {
+    event.preventDefault();
     
-    // Validate input
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const errorMessage = document.getElementById('login-error-message');
+    
+    // Validate inputs
+    if (!usernameInput || !passwordInput) return;
+    
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
+    
     if (!username || !password) {
-      loginError.textContent = 'Please enter both username and password';
-      loginError.style.display = 'block';
+      if (errorMessage) {
+        errorMessage.textContent = 'Please enter username and password';
+        errorMessage.classList.remove('d-none');
+      }
       return;
     }
     
-    // Hide error message
-    loginError.style.display = 'none';
+    // Hide any previous error messages
+    if (errorMessage) {
+      errorMessage.classList.add('d-none');
+    }
     
-    // Show loading indicator
-    const submitBtn = document.querySelector('#login-form button[type="submit"]');
-    const originalBtnText = submitBtn.innerHTML;
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Logging in...';
+    // Show loading state
+    this.app.ui.showLoading('Signing in...');
     
-    // Attempt login directly with fetch to diagnose the issue
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ username, password })
-      });
+      // Attempt to login
+      const response = await this.app.api.login(username, password);
       
-      // Reset button
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = originalBtnText;
-      
-      if (response.ok) {
-        const data = await response.json();
+      if (response && response.user) {
+        // Set the user in state and navigate to dashboard
+        this.app.state.setUser(response.user);
         
-        if (data.user) {
-          // Store user in app state
-          this.app.state.setUser(data.user);
-          // Set auth token
-          localStorage.setItem('authToken', 'tempToken');
-          // Navigate to dashboard
-          this.app.router.navigate('dashboard');
-          return true;
-        } else {
-          loginError.textContent = 'Invalid response from server';
-          loginError.style.display = 'block';
-          return false;
-        }
+        // Load application data and navigate to dashboard
+        await this.app.loadAppData();
+        this.app.router.navigate('dashboard');
+        
+        // Show success notification
+        this.app.ui.showSuccess('Successfully signed in');
       } else {
-        const errorText = `Login failed: ${response.status} ${response.statusText}`;
-        loginError.textContent = errorText;
-        loginError.style.display = 'block';
-        console.error(errorText);
-        return false;
+        // Show error message
+        if (errorMessage) {
+          errorMessage.textContent = 'Invalid username or password';
+          errorMessage.classList.remove('d-none');
+        }
       }
     } catch (error) {
-      // Reset button
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = originalBtnText;
-      
-      // Show error
-      loginError.textContent = error.message || 'Failed to login. Please try again.';
-      loginError.style.display = 'block';
       console.error('Login error:', error);
-      return false;
+      
+      // Show error message
+      if (errorMessage) {
+        errorMessage.textContent = error.message || 'Failed to sign in. Please try again.';
+        errorMessage.classList.remove('d-none');
+      }
+    } finally {
+      // Hide loading state
+      this.app.ui.hideLoading();
     }
   }
 }

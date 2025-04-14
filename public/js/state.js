@@ -4,7 +4,6 @@
  */
 export class AppState {
   constructor() {
-    // Initialize state
     this.state = {
       user: null,
       nodes: [],
@@ -14,10 +13,12 @@ export class AppState {
       selectedVM: null,
       selectedContainer: null,
       isLoading: false,
-      error: null
+      error: null,
+      dashboardData: null,
+      vmTemplates: [],
+      lxcTemplates: [],
     };
     
-    // Event subscribers
     this.subscribers = [];
   }
   
@@ -36,10 +37,8 @@ export class AppState {
    */
   subscribe(callback) {
     this.subscribers.push(callback);
-    
-    // Return unsubscribe function
     return () => {
-      this.subscribers = this.subscribers.filter(cb => cb !== callback);
+      this.subscribers = this.subscribers.filter(subscriber => subscriber !== callback);
     };
   }
   
@@ -55,7 +54,10 @@ export class AppState {
    * @param {Object} newState - New state object
    */
   setState(newState) {
-    this.state = { ...this.state, ...newState };
+    this.state = {
+      ...this.state,
+      ...newState,
+    };
     this.notifySubscribers();
   }
   
@@ -136,5 +138,29 @@ export class AppState {
    */
   setError(error) {
     this.setState({ error });
+  }
+  
+  /**
+   * Set dashboard data
+   * @param {Object} dashboardData - Dashboard data
+   */
+  setDashboardData(dashboardData) {
+    this.setState({ dashboardData });
+  }
+  
+  /**
+   * Set VM templates
+   * @param {Array} vmTemplates - VM templates
+   */
+  setVMTemplates(vmTemplates) {
+    this.setState({ vmTemplates });
+  }
+  
+  /**
+   * Set LXC templates
+   * @param {Array} lxcTemplates - LXC templates
+   */
+  setLXCTemplates(lxcTemplates) {
+    this.setState({ lxcTemplates });
   }
 }

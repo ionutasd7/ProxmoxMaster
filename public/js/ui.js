@@ -5,138 +5,28 @@
 export class UI {
   constructor(app) {
     this.app = app;
-    this.rootElement = document.getElementById('app-root');
+    
+    // Initialize Bootstrap tooltips and popovers
+    document.addEventListener('DOMContentLoaded', () => {
+      this.initializeBootstrapComponents();
+    });
   }
   
   /**
-   * Create main application layout
-   * @returns {HTMLElement} Layout container
+   * Initialize Bootstrap components
    */
-  createLayout() {
-    // Clear root element
-    this.rootElement.innerHTML = '';
+  initializeBootstrapComponents() {
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
     
-    // Create app container
-    const appContainer = document.createElement('div');
-    appContainer.className = 'app-container';
-    
-    // Create sidebar
-    const sidebar = document.createElement('div');
-    sidebar.className = 'sidebar';
-    sidebar.innerHTML = this.getSidebarHTML();
-    
-    // Create main content
-    const mainContent = document.createElement('div');
-    mainContent.className = 'main-content';
-    mainContent.id = 'main-content';
-    
-    // Append elements
-    appContainer.appendChild(sidebar);
-    appContainer.appendChild(mainContent);
-    this.rootElement.appendChild(appContainer);
-    
-    return mainContent;
-  }
-  
-  /**
-   * Get sidebar HTML
-   * @returns {string} Sidebar HTML
-   */
-  getSidebarHTML() {
-    const { user } = this.app.state.getState();
-    
-    return `
-      <div class="sidebar-header">
-        <div class="logo">
-          <i class="fas fa-cube logo-icon"></i>
-          <span>Proxmox Manager</span>
-        </div>
-      </div>
-      
-      <div class="p-3 mb-2 border-bottom" style="border-color: var(--divider) !important;">
-        <div class="d-flex align-items-center">
-          <div class="rounded-circle bg-gradient" style="width: 40px; height: 40px; background: linear-gradient(45deg, var(--accent-primary), var(--accent-tertiary)); display: flex; align-items: center; justify-content: center;">
-            <i class="fas fa-user text-white"></i>
-          </div>
-          <div class="ms-3">
-            <div class="fw-medium">${user?.username || 'User'}</div>
-            <small class="text-muted">${user?.email || 'Administrator'}</small>
-          </div>
-        </div>
-      </div>
-      
-      <div class="sidebar-nav">
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="dashboard">
-            <i class="fas fa-chart-line"></i>
-            Dashboard
-          </a>
-        </div>
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="nodes">
-            <i class="fas fa-server"></i>
-            Nodes
-          </a>
-        </div>
-        
-        <div class="px-4 mt-4 mb-2">
-          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">Virtualization</span>
-        </div>
-        
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="vms">
-            <i class="fas fa-desktop"></i>
-            Virtual Machines
-          </a>
-        </div>
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="containers">
-            <i class="fas fa-box"></i>
-            Containers
-          </a>
-        </div>
-        
-        <div class="px-4 mt-4 mb-2">
-          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">Management</span>
-        </div>
-        
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="storage">
-            <i class="fas fa-hdd"></i>
-            Storage
-          </a>
-        </div>
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="network">
-            <i class="fas fa-network-wired"></i>
-            Network
-          </a>
-        </div>
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="updates">
-            <i class="fas fa-sync"></i>
-            Updates
-          </a>
-        </div>
-        
-        <div class="px-4 mt-4 mb-2">
-          <span class="text-muted text-uppercase" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em;">System</span>
-        </div>
-        
-        <div class="nav-item">
-          <a href="#" class="nav-link" data-route="settings">
-            <i class="fas fa-cog"></i>
-            Settings
-          </a>
-        </div>
-        <div class="nav-item">
-          <a href="#" class="nav-link" id="logout-btn">
-            <i class="fas fa-sign-out-alt"></i>
-            Logout
-          </a>
-        </div>
-      </div>
-    `;
+    // Initialize popovers
+    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    popoverTriggerList.map(function (popoverTriggerEl) {
+      return new bootstrap.Popover(popoverTriggerEl);
+    });
   }
   
   /**
@@ -144,24 +34,14 @@ export class UI {
    * @param {string} message - Loading message
    */
   showLoading(message = 'Loading...') {
-    // Hide any existing loading overlay
-    this.hideLoading();
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingMessage = document.getElementById('loading-message');
     
-    // Create loading overlay
-    const loadingOverlay = document.createElement('div');
-    loadingOverlay.id = 'loading-overlay';
-    loadingOverlay.className = 'loader-overlay';
-    loadingOverlay.innerHTML = `
-      <div class="text-center">
-        <div class="loader"></div>
-        <div class="loader-message">${message}</div>
-      </div>
-    `;
+    if (loadingOverlay && loadingMessage) {
+      loadingMessage.textContent = message;
+      loadingOverlay.classList.remove('d-none');
+    }
     
-    // Append to body
-    document.body.appendChild(loadingOverlay);
-    
-    // Update app state
     this.app.state.setLoading(true);
   }
   
@@ -170,166 +50,185 @@ export class UI {
    */
   hideLoading() {
     const loadingOverlay = document.getElementById('loading-overlay');
+    
     if (loadingOverlay) {
-      loadingOverlay.remove();
+      loadingOverlay.classList.add('d-none');
     }
     
-    // Update app state
     this.app.state.setLoading(false);
   }
   
   /**
-   * Show error message
-   * @param {string} message - Error message
-   * @param {string} title - Error title
-   */
-  showError(message, title = 'Error') {
-    this.showNotification(message, 'danger', title);
-  }
-  
-  /**
-   * Show success message
+   * Show a success notification
    * @param {string} message - Success message
-   * @param {string} title - Success title
    */
-  showSuccess(message, title = 'Success') {
-    this.showNotification(message, 'success', title);
+  showSuccess(message) {
+    this.showNotification('Success', message, 'success');
   }
   
   /**
-   * Get a status badge based on status text
-   * @param {string} status - Status text
-   * @returns {string} HTML for status badge
+   * Show an error notification
+   * @param {string} message - Error message
    */
-  getStatusBadge(status) {
-    if (!status) return '';
-    
-    status = status.toLowerCase();
-    let badgeClass = 'bg-secondary';
-    let icon = 'question-circle';
-    
-    if (status === 'online' || status === 'running' || status === 'active') {
-      badgeClass = 'bg-success';
-      icon = 'check-circle';
-    } else if (status === 'offline' || status === 'stopped' || status === 'inactive') {
-      badgeClass = 'bg-danger';
-      icon = 'times-circle';
-    } else if (status === 'pending' || status === 'starting' || status === 'stopping') {
-      badgeClass = 'bg-warning';
-      icon = 'clock';
-    } else if (status === 'paused' || status === 'suspended') {
-      badgeClass = 'bg-info';
-      icon = 'pause-circle';
-    }
-    
-    return `<span class="badge ${badgeClass}"><i class="fas fa-${icon} me-1"></i>${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
+  showError(message) {
+    this.showNotification('Error', message, 'danger');
+    this.app.state.setError(message);
   }
   
   /**
-   * Show notification
+   * Show a warning notification
+   * @param {string} message - Warning message
+   */
+  showWarning(message) {
+    this.showNotification('Warning', message, 'warning');
+  }
+  
+  /**
+   * Show an info notification
+   * @param {string} message - Info message
+   */
+  showInfo(message) {
+    this.showNotification('Info', message, 'info');
+  }
+  
+  /**
+   * Show a notification toast
+   * @param {string} title - Notification title
    * @param {string} message - Notification message
    * @param {string} type - Notification type (success, danger, warning, info)
-   * @param {string} title - Notification title
    */
-  showNotification(message, type = 'info', title = '') {
-    // Hide any existing notification
-    this.hideNotification();
+  showNotification(title, message, type = 'info') {
+    const toastEl = document.getElementById('notification-toast');
+    const toastTitle = document.getElementById('toast-title');
+    const toastMessage = document.getElementById('toast-message');
+    const toastIcon = document.getElementById('toast-icon');
     
-    // Create notification
-    const notification = document.createElement('div');
-    notification.id = 'notification';
-    notification.className = `notification ${type}`;
-    
-    // Icon based on type
-    let iconClass = 'info-circle';
-    if (type === 'success') iconClass = 'check-circle';
-    if (type === 'danger') iconClass = 'exclamation-circle';
-    if (type === 'warning') iconClass = 'exclamation-triangle';
-    
-    notification.innerHTML = `
-      <div class="notification-icon">
-        <i class="fas fa-${iconClass}"></i>
-      </div>
-      <div class="notification-content">
-        ${title ? `<div class="notification-title">${title}</div>` : ''}
-        <div class="notification-message">${message}</div>
-      </div>
-      <div class="notification-close">
-        <i class="fas fa-times"></i>
-      </div>
-    `;
-    
-    // Add event listener to close button
-    notification.querySelector('.notification-close').addEventListener('click', () => {
-      this.hideNotification();
-    });
-    
-    // Append to body
-    document.body.appendChild(notification);
-    
-    // Add show class after a slight delay (for animation)
-    setTimeout(() => {
-      notification.classList.add('show');
-    }, 10);
-    
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-      this.hideNotification();
-    }, 5000);
-  }
-  
-  /**
-   * Hide notification
-   */
-  hideNotification() {
-    const notification = document.getElementById('notification');
-    if (notification) {
-      notification.remove();
+    if (toastEl && toastTitle && toastMessage && toastIcon) {
+      // Set toast content
+      toastTitle.textContent = title;
+      toastMessage.textContent = message;
+      
+      // Set toast icon
+      toastIcon.className = 'me-2 fas';
+      
+      switch (type) {
+        case 'success':
+          toastIcon.classList.add('fa-check-circle', 'text-success');
+          break;
+        case 'danger':
+          toastIcon.classList.add('fa-exclamation-circle', 'text-danger');
+          break;
+        case 'warning':
+          toastIcon.classList.add('fa-exclamation-triangle', 'text-warning');
+          break;
+        case 'info':
+        default:
+          toastIcon.classList.add('fa-info-circle', 'text-info');
+          break;
+      }
+      
+      // Show toast
+      const toast = new bootstrap.Toast(toastEl, { delay: 5000 });
+      toast.show();
     }
   }
   
   /**
-   * Create page header
-   * @param {string} title - Page title
-   * @param {string} icon - Font Awesome icon class
-   * @returns {string} Header HTML
-   */
-  createPageHeader(title, icon = 'cube') {
-    return `
-      <div class="d-flex justify-content-between align-items-center mb-4 fade-in">
-        <div>
-          <h2 class="mb-0 fw-bold"><i class="fas fa-${icon} me-2 text-primary"></i> ${title}</h2>
-          <p class="text-muted mb-0 mt-1">Manage your Proxmox infrastructure</p>
-        </div>
-        <div class="d-flex align-items-center">
-          <button id="refresh-btn" class="btn btn-primary rounded-pill shadow-sm" title="Refresh data">
-            <i class="fas fa-sync-alt me-2"></i> Refresh
-          </button>
-        </div>
-      </div>
-    `;
-  }
-  
-  /**
-   * Create a card
+   * Create a card with header and body
    * @param {string} title - Card title
-   * @param {string} content - Card content
-   * @param {string} icon - Font Awesome icon class
+   * @param {string} content - Card content (HTML)
+   * @param {string} icon - Card icon (Font Awesome class)
    * @returns {string} Card HTML
    */
   createCard(title, content, icon = null) {
+    let iconHTML = '';
+    
+    if (icon) {
+      iconHTML = `<i class="fas fa-${icon} me-2"></i>`;
+    }
+    
     return `
-      <div class="card mb-4 slide-in">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h5 class="mb-0">
-            ${icon ? `<i class="fas fa-${icon} me-2 text-primary"></i>` : ''}
-            ${title}
-          </h5>
+      <div class="custom-card">
+        <div class="card-header">
+          <h5>${iconHTML}${title}</h5>
+          <div class="card-header-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary refresh-card-btn">
+              <i class="fas fa-sync-alt"></i>
+            </button>
+          </div>
         </div>
         <div class="card-body">
           ${content}
         </div>
       </div>
+    `;
+  }
+  
+  /**
+   * Create a resource usage card
+   * @param {string} title - Resource title
+   * @param {number} percentage - Percentage value
+   * @param {string} label - Resource label
+   * @param {string} type - Resource type (cpu, memory, disk)
+   * @returns {string} Resource card HTML
+   */
+  createResourceCard(title, percentage, label, type = 'cpu') {
+    let colorClass = 'cpu-bar';
+    
+    if (type === 'memory') {
+      colorClass = 'memory-bar';
+    } else if (type === 'disk') {
+      colorClass = 'disk-bar';
+    }
+    
+    return `
+      <div class="resource-card">
+        <div class="resource-header">
+          <div class="resource-title">${title}</div>
+          <div class="resource-value" id="${type}-usage-percentage">${percentage}%</div>
+        </div>
+        <div class="resource-bar">
+          <div class="resource-progress ${colorClass}" style="width: ${percentage}%;"></div>
+        </div>
+        <div class="mt-2 text-muted small text-end" id="${type}-usage-label">${label}</div>
+      </div>
+    `;
+  }
+  
+  /**
+   * Get status badge HTML
+   * @param {string} status - Status (online, offline, warning, unknown)
+   * @returns {string} Status badge HTML
+   */
+  getStatusBadge(status) {
+    status = status ? status.toLowerCase() : 'unknown';
+    
+    let badgeClass = 'status-unknown';
+    let badgeText = 'Unknown';
+    let badgeIcon = 'question-circle';
+    
+    switch (status) {
+      case 'online':
+        badgeClass = 'status-online';
+        badgeText = 'Online';
+        badgeIcon = 'check-circle';
+        break;
+      case 'offline':
+        badgeClass = 'status-offline';
+        badgeText = 'Offline';
+        badgeIcon = 'times-circle';
+        break;
+      case 'warning':
+        badgeClass = 'status-warning';
+        badgeText = 'Warning';
+        badgeIcon = 'exclamation-triangle';
+        break;
+    }
+    
+    return `
+      <span class="status-badge ${badgeClass}">
+        <i class="fas fa-${badgeIcon} me-1"></i> ${badgeText}
+      </span>
     `;
   }
   
@@ -352,69 +251,89 @@ export class UI {
   }
   
   /**
-   * Format date to human-readable format
-   * @param {string} dateStr - Date string
+   * Format uptime to human-readable time
+   * @param {number} seconds - Uptime in seconds
+   * @returns {string} Formatted uptime
+   */
+  formatUptime(seconds) {
+    if (!seconds || seconds <= 0) return 'N/A';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  }
+  
+  /**
+   * Format a date to a human-readable string
+   * @param {string} dateString - Date string
    * @returns {string} Formatted date
    */
-  formatDate(dateStr) {
-    const date = new Date(dateStr);
+  formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    
+    const date = new Date(dateString);
     return date.toLocaleString();
   }
   
   /**
-   * Get status badge HTML
-   * @param {string} status - Status
-   * @returns {string} Badge HTML
+   * Show a confirm dialog
+   * @param {string} title - Dialog title
+   * @param {string} message - Dialog message
+   * @param {string} confirmText - Confirm button text
+   * @param {string} cancelText - Cancel button text
+   * @returns {Promise<boolean>} User confirmation
    */
-  getStatusBadge(status) {
-    let badgeClass = 'bg-secondary';
-    let icon = 'question-circle';
-    
-    // Determine badge type based on status
-    if (typeof status === 'string') {
-      const lowerStatus = status.toLowerCase();
+  confirm(title, message, confirmText = 'Confirm', cancelText = 'Cancel') {
+    return new Promise((resolve) => {
+      // Create modal element
+      const modalId = 'confirm-modal-' + Date.now();
+      const modalHTML = `
+        <div class="modal fade" id="${modalId}" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">${title}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                ${message}
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${cancelText}</button>
+                <button type="button" class="btn btn-primary confirm-btn">${confirmText}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
       
-      if (lowerStatus.includes('running') || lowerStatus === 'up' || lowerStatus === 'online') {
-        badgeClass = 'bg-success';
-        icon = 'check-circle';
-      } else if (lowerStatus.includes('stopped') || lowerStatus === 'down' || lowerStatus === 'offline') {
-        badgeClass = 'bg-danger';
-        icon = 'times-circle';
-      } else if (lowerStatus.includes('pause') || lowerStatus.includes('suspend')) {
-        badgeClass = 'bg-warning';
-        icon = 'pause-circle';
-      }
-    }
-    
-    return `<span class="badge ${badgeClass} rounded-pill"><i class="fas fa-${icon} me-1"></i> ${status}</span>`;
-  }
-  
-  /**
-   * Create resource usage meter
-   * @param {number} usedPercent - Used percentage (0-100)
-   * @param {string} label - Resource label
-   * @param {string} value - Current value text
-   * @returns {string} Resource meter HTML
-   */
-  createResourceMeter(usedPercent, label, value) {
-    // Determine color class based on usage percentage
-    let colorClass = 'resource-meter-fill-low';
-    if (usedPercent > 75) {
-      colorClass = 'resource-meter-fill-high';
-    } else if (usedPercent > 50) {
-      colorClass = 'resource-meter-fill-medium';
-    }
-    
-    return `
-      <div class="resource-meter">
-        <div class="resource-meter-label">
-          <span class="resource-meter-name">${label}</span>
-          <span class="resource-meter-value">${value}</span>
-        </div>
-        <div class="resource-meter-bar">
-          <div class="resource-meter-fill ${colorClass}" style="width: ${usedPercent}%"></div>
-        </div>
-      </div>
-    `;
+      // Append modal to body
+      document.body.insertAdjacentHTML('beforeend', modalHTML);
+      
+      const modalEl = document.getElementById(modalId);
+      const modal = new bootstrap.Modal(modalEl);
+      
+      // Add event listeners
+      modalEl.querySelector('.confirm-btn').addEventListener('click', () => {
+        modal.hide();
+        resolve(true);
+      });
+      
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalEl.remove();
+        resolve(false);
+      });
+      
+      // Show modal
+      modal.show();
+    });
   }
 }

@@ -246,8 +246,23 @@ export class DashboardView {
    */
   async fetchDashboardData() {
     try {
+      // Fetch fresh data from API
       const response = await this.app.api.getDashboardData();
       console.log('Dashboard data:', response);
+      
+      // Import dashboardState
+      import('../dashboard-state.js')
+        .then(module => {
+          if (response && response.success) {
+            // Use the dashboardState module to preserve good values
+            const preservedData = module.dashboardState.updateData(response);
+            console.log('Dashboard data after state management:', preservedData);
+          }
+        })
+        .catch(err => {
+          console.warn('Failed to import dashboard state module:', err);
+        });
+      
       return response;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);

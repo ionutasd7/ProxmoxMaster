@@ -492,19 +492,16 @@ app.get('/api/dashboard', async (req, res) => {
     
     // Reset totalNodes to match actual node count
     clusterStats.totalNodes = nodeDetails.length;
-    if (clusterStats.onlineNodes + clusterStats.offlineNodes !== clusterStats.totalNodes) {
-      console.log('Node count mismatch detected! Fixing...');
-      console.log(`Before: totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}`);
-      
-      // Ensure online + offline = total
-      if (clusterStats.onlineNodes > clusterStats.totalNodes) {
-        clusterStats.onlineNodes = 0;
-        console.log(`Adjusted onlineNodes to ${clusterStats.onlineNodes}`);
-      }
-      
-      // Set offlineNodes based on totalNodes and onlineNodes
-      clusterStats.offlineNodes = clusterStats.totalNodes - clusterStats.onlineNodes;
-      console.log(`After: totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}`);
+    
+    // Fix possible inconsistencies in node status counts by directly counting from nodeDetails
+    clusterStats.onlineNodes = nodeDetails.filter(node => node.status === 'online').length;
+    clusterStats.offlineNodes = nodeDetails.filter(node => node.status === 'offline').length;
+    clusterStats.warningNodes = nodeDetails.filter(node => node.status === 'unknown' || node.status === 'warning').length;
+    
+    // Consistency check - log if still mismatched
+    if (clusterStats.onlineNodes + clusterStats.offlineNodes + clusterStats.warningNodes !== clusterStats.totalNodes) {
+      console.log('Node count mismatch remains after correction!');
+      console.log(`totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}, warningNodes=${clusterStats.warningNodes}`);
     }
     
     // Debug output before sending to client

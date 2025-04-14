@@ -1432,14 +1432,17 @@ export class DashboardView {
   }
   
   /**
-   * Generate random data for charts
+   * Generate sample data for charts
+   * This function has been modified to always return zero values
+   * to avoid showing incorrect synthetic data while waiting for API data
    * @param {number} count - Number of data points
-   * @param {number} min - Minimum value
-   * @param {number} max - Maximum value
-   * @returns {Array} Random data
+   * @param {number} min - Minimum value (not used)
+   * @param {number} max - Maximum value (not used)
+   * @returns {Array} Zero data array
    */
   generateRandomData(count, min, max) {
-    return Array.from({ length: count }, () => Math.floor(Math.random() * (max - min + 1)) + min);
+    // Return an array of zeros instead of random data
+    return Array(count).fill(0);
   }
   
   /**

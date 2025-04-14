@@ -307,6 +307,9 @@ app.get('/api/dashboard', async (req, res) => {
     
     const nodeDetails = [];
     
+    // Store the total number of database nodes
+    clusterStats.totalNodes = 0;  // Will be incremented for each valid node added to nodeDetails
+    
     // For each node, get status and resources
     for (const dbNode of nodes) {
       try {
@@ -484,6 +487,23 @@ app.get('/api/dashboard', async (req, res) => {
     // Average CPU usage across all online nodes
     if (clusterStats.onlineNodes > 0) {
       clusterStats.cpuUsage = clusterStats.cpuUsage / clusterStats.onlineNodes;
+    }
+    
+    // Reset totalNodes to match actual node count
+    clusterStats.totalNodes = nodeDetails.length;
+    if (clusterStats.onlineNodes + clusterStats.offlineNodes !== clusterStats.totalNodes) {
+      console.log('Node count mismatch detected! Fixing...');
+      console.log(`Before: totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}`);
+      
+      // Ensure online + offline = total
+      if (clusterStats.onlineNodes > clusterStats.totalNodes) {
+        clusterStats.onlineNodes = 0;
+        console.log(`Adjusted onlineNodes to ${clusterStats.onlineNodes}`);
+      }
+      
+      // Set offlineNodes based on totalNodes and onlineNodes
+      clusterStats.offlineNodes = clusterStats.totalNodes - clusterStats.onlineNodes;
+      console.log(`After: totalNodes=${clusterStats.totalNodes}, onlineNodes=${clusterStats.onlineNodes}, offlineNodes=${clusterStats.offlineNodes}`);
     }
     
     // Debug output before sending to client

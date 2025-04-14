@@ -25,13 +25,32 @@ export class DashboardView {
       </div>
     `;
     
+    // Set as main content
+    this.app.ui.setContent(mainContent);
+    
     try {
+      // Import dashboardState for data persistence
+      let dashboardState;
+      try {
+        const module = await import('../dashboard-state.js');
+        dashboardState = module.dashboardState;
+      } catch (stateErr) {
+        console.warn('Could not import dashboard state module:', stateErr);
+      }
+      
       // First get state data with the current nodes
       const { nodes } = this.app.state.getState();
       
       // Fetch dashboard data from API - This returns the consolidated data from the server
       const dashboardData = await this.fetchDashboardData();
       console.log('Dashboard data loaded successfully');
+      
+      // Apply data persistence if dashboard state module is available
+      // This helps preserve non-zero values from previous API calls
+      if (dashboardState && dashboardData.success) {
+        // Log preserved data to console
+        console.log('Applying dashboard state preservation...');
+      }
       
       // Extract data from the API response with fallbacks
       const clusterStats = dashboardData?.cluster?.stats || {
@@ -250,19 +269,27 @@ export class DashboardView {
       const response = await this.app.api.getDashboardData();
       console.log('Dashboard data:', response);
       
-      // Import dashboardState
-      import('../dashboard-state.js')
-        .then(module => {
-          if (response && response.success) {
-            // Use the dashboardState module to preserve good values
-            const preservedData = module.dashboardState.updateData(response);
-            console.log('Dashboard data after state management:', preservedData);
-          }
-        })
-        .catch(err => {
-          console.warn('Failed to import dashboard state module:', err);
-        });
+      try {
+        // Import and use dashboardState synchronously
+        const dashboardStateModule = await import('../dashboard-state.js');
+        const dashboardState = dashboardStateModule.dashboardState;
+        
+        if (response && response.success) {
+          // Use the dashboardState module to preserve good values
+          const preservedData = dashboardState.updateData(response);
+          console.log('Dashboard data after state management:', preservedData);
+          
+          // Return the preserved data with proper structure
+          return {
+            success: true,
+            cluster: preservedData.cluster
+          };
+        }
+      } catch (stateError) {
+        console.warn('Failed to use dashboard state module:', stateError);
+      }
       
+      // Return original response if we can't use the state module
       return response;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);

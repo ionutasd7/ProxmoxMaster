@@ -247,6 +247,7 @@ app.post('/api/logout', (req, res) => {
 // Global VMs and containers endpoints (used for dashboard data)
 // Dashboard endpoint for aggregated cluster data
 app.get('/api/dashboard', async (req, res) => {
+  // This endpoint leverages Proxmox's cluster API - we can get all cluster data from just one node
   try {
     // Get all nodes from database
     const nodesResult = await pool.query(

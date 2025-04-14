@@ -1,132 +1,93 @@
 /**
  * Authentication View
- * Handles user login and registration
  */
-export class AuthView {
-  constructor(app) {
-    this.app = app;
-  }
+export function renderAuthView(app) {
+  const { api, ui } = app;
   
-  /**
-   * Render the authentication view
-   */
-  render() {
-    const appElement = document.getElementById('app');
-    if (!appElement) return;
-    
-    appElement.innerHTML = `
-      <div class="login-container">
-        <div class="login-card">
-          <div class="login-header">
-            <h2>Proxmox Manager</h2>
-            <p class="text-muted">Sign in to your account</p>
-          </div>
-          
-          <div id="login-error-message" class="alert alert-danger mb-3 d-none">
-            Invalid username or password
-          </div>
-          
-          <form id="login-form">
-            <div class="mb-3">
-              <label for="username" class="form-label">Username</label>
-              <input type="text" class="form-control" id="username" value="admin" placeholder="Username" required>
-            </div>
-            
-            <div class="mb-3">
-              <label for="password" class="form-label">Password</label>
-              <input type="password" class="form-control" id="password" value="admin" placeholder="Password" required>
-            </div>
-            
-            <div class="d-grid">
-              <button type="submit" class="btn btn-primary">Sign In</button>
-            </div>
-          </form>
-          
-          <div class="mt-3 text-center text-muted">
-            <small>Default credentials: admin / admin</small>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    this.addEventListeners();
-  }
+  // Create container
+  const container = document.createElement('div');
+  container.className = 'login-container';
   
-  /**
-   * Add event listeners
-   */
-  addEventListeners() {
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-      loginForm.addEventListener('submit', this.handleLogin.bind(this));
-    }
-  }
+  // Create login card
+  const card = document.createElement('div');
+  card.className = 'login-card shadow-lg';
   
-  /**
-   * Handle login form submission
-   * @param {Event} event - Form submit event
-   */
-  async handleLogin(event) {
-    event.preventDefault();
+  // Create header
+  const header = document.createElement('div');
+  header.className = 'login-header';
+  header.innerHTML = `
+    <h1 class="display-5 mb-3">Proxmox Manager</h1>
+    <p class="lead text-muted">Login to access your Proxmox infrastructure</p>
+  `;
+  
+  // Create form
+  const form = document.createElement('form');
+  form.id = 'login-form';
+  form.className = 'needs-validation';
+  form.noValidate = true;
+  
+  form.innerHTML = `
+    <div class="mb-3">
+      <label for="username" class="form-label">Username</label>
+      <input type="text" class="form-control" id="username" placeholder="admin" required>
+      <div class="invalid-feedback">Please enter your username</div>
+    </div>
     
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    const errorMessage = document.getElementById('login-error-message');
+    <div class="mb-3">
+      <label for="password" class="form-label">Password</label>
+      <input type="password" class="form-control" id="password" required>
+      <div class="invalid-feedback">Please enter your password</div>
+    </div>
     
-    // Validate inputs
-    if (!usernameInput || !passwordInput) return;
+    <div class="d-grid gap-2">
+      <button type="submit" class="btn btn-primary btn-lg">Login</button>
+    </div>
     
-    const username = usernameInput.value.trim();
-    const password = passwordInput.value.trim();
+    <hr class="my-4">
     
-    if (!username || !password) {
-      if (errorMessage) {
-        errorMessage.textContent = 'Please enter username and password';
-        errorMessage.classList.remove('d-none');
-      }
+    <div class="alert alert-info">
+      <h5><i class="fas fa-info-circle me-2"></i> Having trouble connecting to Proxmox?</h5>
+      <p>If you're having trouble connecting to your Proxmox server with username/password authentication, you might need to use an API token instead.</p>
+      <a href="#" class="btn btn-outline-primary" id="use-api-token-btn">Use API Token</a>
+    </div>
+  `;
+  
+  // Handle form submission
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // Validate form
+    form.classList.add('was-validated');
+    
+    if (!form.checkValidity()) {
       return;
     }
     
-    // Hide any previous error messages
-    if (errorMessage) {
-      errorMessage.classList.add('d-none');
-    }
-    
-    // Show loading state
-    this.app.ui.showLoading('Signing in...');
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
     
     try {
-      // Attempt to login
-      const response = await this.app.api.login(username, password);
-      
-      if (response && response.user) {
-        // Set the user in state and navigate to dashboard
-        this.app.state.setUser(response.user);
-        
-        // Load application data and navigate to dashboard
-        await this.app.loadAppData();
-        this.app.router.navigate('dashboard');
-        
-        // Show success notification
-        this.app.ui.showSuccess('Successfully signed in');
-      } else {
-        // Show error message
-        if (errorMessage) {
-          errorMessage.textContent = 'Invalid username or password';
-          errorMessage.classList.remove('d-none');
-        }
-      }
+      await app.login(username, password);
     } catch (error) {
-      console.error('Login error:', error);
-      
-      // Show error message
-      if (errorMessage) {
-        errorMessage.textContent = error.message || 'Failed to sign in. Please try again.';
-        errorMessage.classList.remove('d-none');
-      }
-    } finally {
-      // Hide loading state
-      this.app.ui.hideLoading();
+      ui.showError(`Login failed: ${error.message}`);
     }
-  }
+  });
+  
+  // Assemble view
+  card.appendChild(header);
+  card.appendChild(form);
+  container.appendChild(card);
+  
+  // Add event listener for API token button
+  document.addEventListener('DOMContentLoaded', () => {
+    const apiTokenBtn = document.getElementById('use-api-token-btn');
+    if (apiTokenBtn) {
+      apiTokenBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        app.router.navigate('apiToken');
+      });
+    }
+  });
+  
+  return container;
 }

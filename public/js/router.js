@@ -7,15 +7,12 @@ export class Router {
     this.app = app;
     this.routes = {};
     this.currentRoute = null;
-    this.currentParams = {};
     
-    // Register default routes
+    // Register routes
     this.registerRoutes();
     
-    // Initialize popstate event listener
-    window.addEventListener('popstate', (event) => {
-      this.handlePopState(event);
-    });
+    // Handle popstate (browser back/forward)
+    window.addEventListener('popstate', this.handlePopState.bind(this));
     
     // Parse initial URL
     this.parseUrl();
@@ -25,59 +22,79 @@ export class Router {
    * Register application routes
    */
   registerRoutes() {
-    this.routes = {
-      // Main routes
-      'auth': {
-        view: 'auth',
-        title: 'Login - Proxmox Manager'
-      },
-      'dashboard': {
-        view: 'dashboard',
-        title: 'Dashboard - Proxmox Manager',
-        authRequired: true
-      },
-      'nodes': {
-        view: 'nodes',
-        title: 'Nodes - Proxmox Manager',
-        authRequired: true
-      },
-      'node-details': {
-        view: 'nodes',
-        method: 'renderDetails',
-        title: 'Node Details - Proxmox Manager',
-        authRequired: true
-      },
-      'vms': {
-        view: 'vms',
-        title: 'Virtual Machines - Proxmox Manager',
-        authRequired: true
-      },
-      'containers': {
-        view: 'containers',
-        title: 'Containers - Proxmox Manager',
-        authRequired: true
-      },
-      'storage': {
-        view: 'storage',
-        title: 'Storage - Proxmox Manager',
-        authRequired: true
-      },
-      'network': {
-        view: 'network',
-        title: 'Network - Proxmox Manager',
-        authRequired: true
-      },
-      'templates': {
-        view: 'templates',
-        title: 'Templates - Proxmox Manager',
-        authRequired: true
-      },
-      'settings': {
-        view: 'settings',
-        title: 'Settings - Proxmox Manager',
-        authRequired: true
-      }
+    // Define authentication routes
+    this.routes.auth = {
+      path: '/auth',
+      title: 'Login',
+      view: 'auth',
+      requiresAuth: false
     };
+    
+    // Define authenticated routes
+    this.routes.dashboard = {
+      path: '/',
+      title: 'Dashboard',
+      view: 'dashboard',
+      requiresAuth: true
+    };
+    
+    this.routes.nodes = {
+      path: '/nodes',
+      title: 'Nodes',
+      view: 'nodes',
+      requiresAuth: true
+    };
+    
+    this.routes.vms = {
+      path: '/vms',
+      title: 'Virtual Machines',
+      view: 'vms',
+      requiresAuth: true
+    };
+    
+    this.routes.containers = {
+      path: '/containers',
+      title: 'Containers',
+      view: 'containers',
+      requiresAuth: true
+    };
+    
+    this.routes.storage = {
+      path: '/storage',
+      title: 'Storage',
+      view: 'storage',
+      requiresAuth: true
+    };
+    
+    this.routes.network = {
+      path: '/network',
+      title: 'Network',
+      view: 'network',
+      requiresAuth: true
+    };
+    
+    this.routes.templates = {
+      path: '/templates',
+      title: 'Templates',
+      view: 'templates',
+      requiresAuth: true
+    };
+    
+    this.routes.settings = {
+      path: '/settings',
+      title: 'Settings',
+      view: 'settings',
+      requiresAuth: true
+    };
+    
+    this.routes.apiToken = {
+      path: '/api-token',
+      title: 'API Token',
+      view: 'api-token',
+      requiresAuth: true
+    };
+    
+    // Add more routes as needed
   }
   
   /**
@@ -88,34 +105,31 @@ export class Router {
   navigate(routeName, params = {}) {
     console.log('Navigating to route:', routeName, params);
     
-    // Get route definition
     const route = this.routes[routeName];
     if (!route) {
-      console.error(`Route "${routeName}" not found`);
-      this.navigate('dashboard');
+      console.error(`Route ${routeName} not found`);
       return;
     }
     
-    // Check if authentication is required
-    if (route.authRequired && !this.app.state.isAuthenticated()) {
+    // Check authentication
+    if (route.requiresAuth && !this.app.isAuthenticated) {
       console.log('Authentication required for route:', routeName);
       this.navigate('auth');
       return;
     }
     
-    // Update URL
+    // Update history
     const url = this.getRouteUrl(routeName, params);
-    window.history.pushState({ route: routeName, params }, route.title, url);
+    window.history.pushState({ routeName, params }, route.title, url);
     
     // Update document title
-    document.title = route.title;
-    
-    // Set current route and params
-    this.currentRoute = routeName;
-    this.currentParams = params;
+    document.title = `${route.title} | Proxmox Manager`;
     
     // Render view
     this.renderView(route, params);
+    
+    // Update current route
+    this.currentRoute = { routeName, params };
   }
   
   /**
@@ -123,26 +137,11 @@ export class Router {
    * @param {PopStateEvent} event - Popstate event
    */
   handlePopState(event) {
-    const state = event.state || { route: 'dashboard', params: {} };
-    const route = this.routes[state.route];
-    
-    if (route) {
-      // Check if authentication is required
-      if (route.authRequired && !this.app.state.isAuthenticated()) {
-        console.log('Authentication required for route:', state.route);
-        this.navigate('auth');
-        return;
-      }
-      
-      // Update document title
-      document.title = route.title;
-      
-      // Set current route and params
-      this.currentRoute = state.route;
-      this.currentParams = state.params;
-      
-      // Render view
-      this.renderView(route, state.params);
+    if (event.state && event.state.routeName) {
+      this.renderView(this.routes[event.state.routeName], event.state.params);
+      this.currentRoute = { routeName: event.state.routeName, params: event.state.params };
+    } else {
+      this.parseUrl();
     }
   }
   
@@ -150,33 +149,38 @@ export class Router {
    * Parse current URL
    */
   parseUrl() {
-    // Get path from URL
     const path = window.location.pathname;
     
-    // Default route
-    let routeName = 'dashboard';
+    // Find matching route
+    let matchedRoute = null;
+    let routeName = null;
     let params = {};
     
-    // Parse route and params from URL
-    if (path !== '/') {
-      const pathParts = path.split('/').filter(Boolean);
-      if (pathParts.length > 0) {
-        const possibleRoute = pathParts[0];
-        
-        // Check if route exists
-        if (this.routes[possibleRoute]) {
-          routeName = possibleRoute;
-          
-          // Parse params
-          if (pathParts.length > 1) {
-            // TODO: Parse params from URL (for the future)
-          }
-        }
+    for (const [name, route] of Object.entries(this.routes)) {
+      if (path === route.path) {
+        matchedRoute = route;
+        routeName = name;
+        break;
       }
     }
     
-    // Navigate to parsed route
-    this.navigate(routeName, params);
+    // If no route matched, use default
+    if (!matchedRoute) {
+      matchedRoute = this.routes.dashboard;
+      routeName = 'dashboard';
+    }
+    
+    // Check authentication
+    if (matchedRoute.requiresAuth && !this.app.isAuthenticated) {
+      this.navigate('auth');
+      return;
+    }
+    
+    // Render view
+    this.renderView(matchedRoute, params);
+    
+    // Update current route
+    this.currentRoute = { routeName, params };
   }
   
   /**
@@ -186,17 +190,12 @@ export class Router {
    * @returns {string} URL
    */
   getRouteUrl(routeName, params = {}) {
-    // Simple URL generation
-    if (routeName === 'dashboard') {
+    const route = this.routes[routeName];
+    if (!route) {
       return '/';
     }
     
-    // Add params to URL if needed
-    if (routeName === 'node-details' && params.id) {
-      return `/nodes/${params.id}`;
-    }
-    
-    return `/${routeName}`;
+    return route.path;
   }
   
   /**
@@ -205,24 +204,47 @@ export class Router {
    * @param {Object} params - Route parameters
    */
   renderView(route, params = {}) {
-    const viewName = route.view;
-    if (!viewName) {
-      console.error('No view specified for route:', route);
-      return;
-    }
-    
-    const view = this.app.views[viewName];
-    if (!view) {
-      console.error(`View "${viewName}" not found`);
-      return;
-    }
-    
-    // Call render method or custom method if specified
-    const method = route.method || 'render';
-    if (typeof view[method] === 'function') {
-      view[method](params);
-    } else {
-      console.error(`Method "${method}" not found in view "${viewName}"`);
-    }
+    // Import the view module dynamically
+    import(`./views/${route.view}.js`)
+      .then(module => {
+        // Get render function
+        const renderFunction = module[`render${route.view.charAt(0).toUpperCase() + route.view.slice(1)}View`];
+        
+        if (typeof renderFunction !== 'function') {
+          console.error(`Render function for view ${route.view} not found`);
+          return;
+        }
+        
+        // Render the view
+        const viewContent = renderFunction(this.app, params);
+        
+        // Update the app container
+        const appContainer = document.getElementById('app');
+        if (appContainer) {
+          appContainer.innerHTML = '';
+          
+          if (typeof viewContent === 'string') {
+            appContainer.innerHTML = viewContent;
+          } else if (viewContent instanceof Node) {
+            appContainer.appendChild(viewContent);
+          }
+        }
+      })
+      .catch(error => {
+        console.error(`Error loading view ${route.view}:`, error);
+        
+        // Show error message
+        const appContainer = document.getElementById('app');
+        if (appContainer) {
+          appContainer.innerHTML = `
+            <div class="container mt-5">
+              <div class="alert alert-danger">
+                <h4 class="alert-heading">Error</h4>
+                <p>Failed to load view: ${error.message}</p>
+              </div>
+            </div>
+          `;
+        }
+      });
   }
 }

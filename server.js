@@ -46,30 +46,83 @@ const createProxmoxClient = (host, port, username, password, realm = 'pam', veri
     rejectUnauthorized: verifySSL
   });
 
-  return axios.create({
+  // Configure axios with additional settings for Proxmox
+  const axiosInstance = axios.create({
     baseURL: `https://${host}:${port}/api2/json`,
     httpsAgent,
     headers: {
       'Content-Type': 'application/json'
+    },
+    // Add more reliable settings
+    timeout: 30000, // 30 second timeout
+    maxRedirects: 5,
+    validateStatus: function (status) {
+      return status >= 200 && status < 500; // Handle authentication errors in code
     }
   });
+
+  // Add request interceptor for debugging
+  axiosInstance.interceptors.request.use((config) => {
+    console.log(`Request to Proxmox: ${config.method?.toUpperCase() || 'UNKNOWN'} ${config.url}`);
+    return config;
+  });
+
+  // Add response interceptor for debugging
+  axiosInstance.interceptors.response.use(
+    (response) => {
+      return response;
+    },
+    (error) => {
+      if (error.response) {
+        console.error(`Proxmox API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      } else if (error.request) {
+        console.error('Proxmox API Error: No response received', error.message);
+      } else {
+        console.error('Proxmox API Error:', error.message);
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return axiosInstance;
 };
 
 // Authenticate with Proxmox API and get ticket
 async function authenticateProxmox(client, username, password, realm = 'pam') {
   try {
     console.log(`Authenticating with Proxmox API using ${username}`);
+    
+    // Ensure username has the correct format (with @realm if not already included)
+    let formattedUsername = username;
+    if (!username.includes('@') && realm) {
+      formattedUsername = `${username}@${realm}`;
+    }
+    
+    console.log(`Using formatted username: ${formattedUsername}`);
+    
+    // Try with URL-encoded form data
+    const formData = new URLSearchParams();
+    formData.append('username', formattedUsername);
+    formData.append('password', password);
+    
+    // Don't include realm in form data if it's already in the username
+    if (!formattedUsername.includes('@')) {
+      formData.append('realm', realm);
+    }
+    
     const response = await client.post('/access/ticket', 
-      `username=${username}&password=${password}&realm=${realm}`, 
+      formData.toString(),
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
-        }
+        },
+        maxRedirects: 5
       }
     );
     
     if (response.data && response.data.data) {
       const { ticket, CSRFPreventionToken } = response.data.data;
+      console.log('Authentication successful, received ticket and CSRF token');
       return { ticket, CSRFPreventionToken };
     } else {
       throw new Error('Authentication failed: Invalid response from Proxmox API');
@@ -80,6 +133,38 @@ async function authenticateProxmox(client, username, password, realm = 'pam') {
       console.error('Response status:', error.response.status);
       console.error('Response data:', error.response.data);
     }
+    
+    // Try a fallback authentication approach with different formatting
+    try {
+      console.log('Trying fallback authentication method...');
+      
+      // Try with the username as-is (without @realm suffix)
+      const plainUsername = username.split('@')[0];
+      
+      const formData = new URLSearchParams();
+      formData.append('username', plainUsername);
+      formData.append('password', password);
+      formData.append('realm', realm);
+      
+      const response = await client.post('/access/ticket', 
+        formData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          maxRedirects: 5
+        }
+      );
+      
+      if (response.data && response.data.data) {
+        const { ticket, CSRFPreventionToken } = response.data.data;
+        console.log('Fallback authentication successful');
+        return { ticket, CSRFPreventionToken };
+      }
+    } catch (fallbackError) {
+      console.error('Fallback authentication also failed:', fallbackError.message);
+    }
+    
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
@@ -201,6 +286,72 @@ app.get('/api/status', (req, res) => {
     message: 'Proxmox Manager API is running',
     serverTime: new Date().toISOString()
   });
+});
+
+// Test a direct connection to Proxmox with API token
+app.post('/api/test-direct-connection', async (req, res) => {
+  try {
+    const { host, port, tokenId, tokenSecret, verifySSL } = req.body;
+    
+    if (!host || !port || !tokenId || !tokenSecret) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: host, port, tokenId, tokenSecret'
+      });
+    }
+    
+    console.log(`Testing direct API token connection to ${host}:${port}`);
+    
+    // Create HTTPS agent with proper SSL verification
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: verifySSL !== false
+    });
+    
+    // Try a direct connection with token auth
+    const apiClient = axios.create({
+      baseURL: `https://${host}:${port}/api2/json`,
+      timeout: 30000,
+      httpsAgent,
+      headers: {
+        'Authorization': `PVEAPIToken=${tokenId}=${tokenSecret}`
+      }
+    });
+    
+    // Test connection by getting version
+    const response = await apiClient.get('/version');
+    
+    if (response.data && response.data.data) {
+      // Successful connection
+      res.json({
+        success: true,
+        message: 'Successfully connected using API token',
+        version: response.data.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Connected but received invalid response format'
+      });
+    }
+  } catch (error) {
+    console.error('Direct connection test error:', error.message);
+    
+    let errorMessage = 'Connection failed';
+    let errorDetails = null;
+    
+    if (error.response) {
+      errorMessage = `Server responded with status ${error.response.status}`;
+      errorDetails = error.response.data;
+    } else if (error.request) {
+      errorMessage = 'No response received from server';
+    }
+    
+    res.status(400).json({
+      success: false,
+      message: errorMessage,
+      details: errorDetails
+    });
+  }
 });
 
 // Authentication routes

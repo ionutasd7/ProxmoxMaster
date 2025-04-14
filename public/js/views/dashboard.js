@@ -25,14 +25,17 @@ export class DashboardView {
       </div>
     `;
     
-    // Get current state
-    const { nodes } = this.app.state.getState();
-    
     try {
-      // Fetch dashboard data from API
+      // First get state data with the current nodes
+      const { nodes } = this.app.state.getState();
+      
+      // Fetch dashboard data from API - This returns the consolidated data from the server
       const dashboardData = await this.fetchDashboardData();
+      console.log('Dashboard data loaded successfully');
+      
+      // Extract data from the API response with fallbacks
       const clusterStats = dashboardData?.cluster?.stats || {
-        totalNodes: 0,
+        totalNodes: nodes?.length || 0,
         onlineNodes: 0,
         warningNodes: 0,
         offlineNodes: 0,
@@ -47,7 +50,8 @@ export class DashboardView {
         outbound: 0
       };
       
-      const nodeDetails = dashboardData?.cluster?.nodes || [];
+      // Use API node details or fallback to state
+      const nodeDetails = dashboardData?.cluster?.nodes || nodes || [];
       
       // Format network values
       const inboundMBs = this.formatNetworkValue(networkUsage.inbound);
@@ -1084,17 +1088,11 @@ export class DashboardView {
    * Initialize charts
    * @param {Array} nodes - Nodes
    */
-  initializeCharts(nodes) {
-    // Always set default values, regardless of whether nodes exist
-    document.getElementById('cpu-usage-percentage').textContent = '0%';
-    document.getElementById('memory-usage-percentage').textContent = '0%';
-    document.getElementById('disk-usage-percentage').textContent = '0%';
-    document.getElementById('cpu-usage-label').textContent = '0 CPUs, 0 Socket(s)';
-    document.getElementById('memory-usage-label').textContent = '0 GB / 0 GB';
-    document.getElementById('disk-usage-label').textContent = '0 GB / 0 GB';
-    document.getElementById('network-in').textContent = '0 MB/s';
-    document.getElementById('network-out').textContent = '0 MB/s';
+  initializeCharts(nodes, clusterStats) {
+    // Don't reset values that are already populated by the dashboard endpoint
+    // We'll only fetch additional monitoring data if needed
     
+    // We can proceed with fetching more detailed node data
     if (nodes.length === 0) return;
     
     // Only initialize with actual node data
@@ -1105,6 +1103,9 @@ export class DashboardView {
           this.updateResourceDisplays(monitoringData);
           this.updateNodeStatusCounts(nodes);
         }
+      }).catch(error => {
+        console.warn('Error fetching node monitoring data:', error);
+        // Don't reset values if there's an error - keep what we already have
       });
     }, 100);
   }

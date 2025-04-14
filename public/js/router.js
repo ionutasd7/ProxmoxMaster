@@ -130,6 +130,12 @@ export class Router {
     
     // Update current route
     this.currentRoute = { routeName, params };
+    
+    // Dispatch route change event
+    const routeChangeEvent = new CustomEvent('route-change', { 
+      detail: { routeName, params }
+    });
+    document.dispatchEvent(routeChangeEvent);
   }
   
   /**

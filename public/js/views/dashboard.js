@@ -95,8 +95,7 @@ export function renderDashboardView(app) {
       const statCards = [
         { icon: 'server', color: 'primary', label: 'Nodes', value: stats.totalNodes, online: stats.onlineNodes },
         { icon: 'desktop', color: 'success', label: 'VMs', value: stats.totalVMs, online: stats.runningVMs },
-        { icon: 'box', color: 'info', label: 'Containers', value: stats.totalContainers, online: stats.runningContainers },
-        { icon: 'microchip', color: 'warning', label: 'CPUs', value: stats.totalCPUs, usage: Math.round(stats.cpuUsage * 100) }
+        { icon: 'box', color: 'info', label: 'Containers', value: stats.totalContainers, online: stats.runningContainers }
       ];
       
       // Create stat card elements
@@ -162,108 +161,102 @@ export function renderDashboardView(app) {
       
       // Add node cards
       if (nodes.length > 0) {
+        // Create a table layout for nodes
+        const nodeTable = document.createElement('div');
+        nodeTable.className = 'table-responsive';
+        
+        nodeTable.innerHTML = `
+          <table class="table table-bordered node-table">
+            <thead class="bg-light">
+              <tr>
+                <th>Node</th>
+                <th>CPU Usage</th>
+                <th>Memory Usage</th>
+                <th>VMs / Containers</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        `;
+        
+        const tableBody = nodeTable.querySelector('tbody');
+        
+        // Add rows for each node
         nodes.forEach(node => {
           // Calculate percentages
           const memoryPercent = Math.round((node.memory?.used / node.memory?.total) * 100) || 0;
           const cpuPercent = Math.round(node.cpu * 100) || 0;
           
-          const nodeCol = document.createElement('div');
-          nodeCol.className = 'col-xl-6 col-lg-6 mb-4';
+          const row = document.createElement('tr');
+          row.className = node.status === 'online' ? '' : 'table-danger';
           
-          nodeCol.innerHTML = `
-            <div class="card shadow h-100">
-              <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                <h6 class="m-0 font-weight-bold text-primary">
-                  <span class="badge ${node.status === 'online' ? 'text-bg-success' : 'text-bg-danger'} me-2">
-                    <i class="fas fa-${node.status === 'online' ? 'check-circle' : 'times-circle'}"></i>
-                  </span>
-                  ${node.name}
-                </h6>
-                <div class="dropdown no-arrow">
-                  <button class="btn btn-link btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-ellipsis-v"></i>
-                  </button>
-                  <div class="dropdown-menu dropdown-menu-end">
-                    <a class="dropdown-item" href="#" data-route="nodes" data-params='{"nodeId":"${node.id}"}'>
-                      <i class="fas fa-eye me-1"></i> View Details
-                    </a>
-                    <a class="dropdown-item" href="#" data-action="reboot-node" data-node-id="${node.id}">
-                      <i class="fas fa-sync me-1"></i> Reboot
-                    </a>
-                    <a class="dropdown-item" href="#" data-action="shutdown-node" data-node-id="${node.id}">
-                      <i class="fas fa-power-off me-1"></i> Shutdown
-                    </a>
-                  </div>
+          row.innerHTML = `
+            <td>
+              <div class="d-flex align-items-center">
+                <span class="badge ${node.status === 'online' ? 'text-bg-success' : 'text-bg-danger'} me-2">
+                  <i class="fas fa-${node.status === 'online' ? 'check-circle' : 'times-circle'}"></i>
+                </span>
+                <strong>${node.name}</strong>
+              </div>
+            </td>
+            <td>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="text-${cpuPercent > 80 ? 'danger' : cpuPercent > 60 ? 'warning' : 'success'}">${cpuPercent}%</span>
+              </div>
+              <div class="progress" style="height: 6px;">
+                <div class="progress-bar ${cpuPercent > 80 ? 'bg-danger' : cpuPercent > 60 ? 'bg-warning' : 'bg-success'}" 
+                     role="progressbar" 
+                     style="width: ${cpuPercent}%;" 
+                     aria-valuenow="${cpuPercent}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100"></div>
+              </div>
+            </td>
+            <td>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="text-${memoryPercent > 80 ? 'danger' : memoryPercent > 60 ? 'warning' : 'success'}">${memoryPercent}%</span>
+                <small class="text-muted">${formatBytes(node.memory?.used)} / ${formatBytes(node.memory?.total)}</small>
+              </div>
+              <div class="progress" style="height: 6px;">
+                <div class="progress-bar ${memoryPercent > 80 ? 'bg-danger' : memoryPercent > 60 ? 'bg-warning' : 'bg-success'}" 
+                     role="progressbar" 
+                     style="width: ${memoryPercent}%;" 
+                     aria-valuenow="${memoryPercent}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100"></div>
+              </div>
+            </td>
+            <td>
+              <div class="d-flex justify-content-between">
+                <div>
+                  <i class="fas fa-desktop me-1 text-primary"></i> ${node.vms || 0}
+                </div>
+                <div>
+                  <i class="fas fa-box me-1 text-info"></i> ${node.containers || 0}
                 </div>
               </div>
-              <div class="card-body">
-                <div class="resource-section mb-3">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <h6 class="mb-0">
-                      <i class="fas fa-microchip me-1"></i> CPU Usage
-                    </h6>
-                    <span class="text-${cpuPercent > 80 ? 'danger' : cpuPercent > 60 ? 'warning' : 'success'}">${cpuPercent}%</span>
-                  </div>
-                  <div class="progress mb-2" style="height: 10px;">
-                    <div class="progress-bar ${cpuPercent > 80 ? 'bg-danger' : cpuPercent > 60 ? 'bg-warning' : 'bg-success'}" 
-                         role="progressbar" 
-                         style="width: ${cpuPercent}%;" 
-                         aria-valuenow="${cpuPercent}" 
-                         aria-valuemin="0" 
-                         aria-valuemax="100"></div>
-                  </div>
-                </div>
-                
-                <div class="resource-section mb-3">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <h6 class="mb-0">
-                      <i class="fas fa-memory me-1"></i> Memory Usage
-                    </h6>
-                    <div>
-                      <span class="text-${memoryPercent > 80 ? 'danger' : memoryPercent > 60 ? 'warning' : 'success'}">${memoryPercent}%</span>
-                      <small class="text-muted ms-2">${formatBytes(node.memory?.used)} / ${formatBytes(node.memory?.total)}</small>
-                    </div>
-                  </div>
-                  <div class="progress mb-2" style="height: 10px;">
-                    <div class="progress-bar ${memoryPercent > 80 ? 'bg-danger' : memoryPercent > 60 ? 'bg-warning' : 'bg-success'}" 
-                         role="progressbar" 
-                         style="width: ${memoryPercent}%;" 
-                         aria-valuenow="${memoryPercent}" 
-                         aria-valuemin="0" 
-                         aria-valuemax="100"></div>
-                  </div>
-                </div>
-                
-                <div class="node-info mt-3">
-                  <div class="row">
-                    <div class="col-6">
-                      <div class="mb-2">
-                        <small class="text-muted">VMs:</small>
-                        <span class="float-end">${node.vms || 0}</span>
-                      </div>
-                    </div>
-                    <div class="col-6">
-                      <div class="mb-2">
-                        <small class="text-muted">Containers:</small>
-                        <span class="float-end">${node.containers || 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="row">
-                    <div class="col-12">
-                      <div class="mb-2">
-                        <small class="text-muted">IP Address:</small>
-                        <span class="float-end">${node.ip}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            </td>
+            <td>
+              <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-primary" data-action="view-node" data-node-id="${node.id}">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-action="reboot-node" data-node-id="${node.id}">
+                  <i class="fas fa-sync"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" data-action="shutdown-node" data-node-id="${node.id}">
+                  <i class="fas fa-power-off"></i>
+                </button>
               </div>
-            </div>
+            </td>
           `;
           
-          nodesSection.appendChild(nodeCol);
+          tableBody.appendChild(row);
         });
+        
+        nodesSection.appendChild(nodeTable);
       } else {
         // No nodes
         const noNodesCol = document.createElement('div');
@@ -474,6 +467,35 @@ export function renderDashboardView(app) {
   // Refresh dashboard data
   app.refreshDashboard().catch(error => {
     console.error('Error refreshing dashboard data:', error);
+  });
+  
+  // Set up auto-refresh timer (every 10 seconds)
+  const refreshIntervalId = setInterval(async () => {
+    try {
+      await app.refreshDashboard();
+      console.log('Auto-refreshed dashboard data');
+      
+      // Only rerender if we're still on the dashboard view
+      if (app.router.currentRoute && app.router.currentRoute.routeName === 'dashboard') {
+        app.router.navigate('dashboard');
+      } else {
+        // If we're not on the dashboard anymore, clear the interval
+        clearInterval(refreshIntervalId);
+      }
+    } catch (error) {
+      console.error('Error during auto-refresh:', error);
+    }
+  }, 10000); // 10 seconds
+  
+  // Clean up interval when navigating away
+  document.addEventListener('DOMContentLoaded', () => {
+    // Listen for route changes to clear interval
+    document.addEventListener('route-change', () => {
+      if (app.router.currentRoute && app.router.currentRoute.routeName !== 'dashboard') {
+        clearInterval(refreshIntervalId);
+        console.log('Cleared dashboard auto-refresh timer');
+      }
+    });
   });
   
   return container;

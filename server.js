@@ -588,7 +588,8 @@ app.get('/api/nodes', async (req, res) => {
       use_ssl: true,
       verify_ssl: node.ssl_verify || false,
       created_at: node.created_at,
-      status: node.node_status || 'online'
+      status: node.node_status || 'unknown',
+      node_status: node.node_status || 'unknown'
     }));
     
     res.json(mappedNodes);
@@ -629,7 +630,7 @@ app.post('/api/nodes', async (req, res) => {
         api_username, // Use api_username as username
         api_password, // Use api_password as password
         verify_ssl || false, // Use verify_ssl as ssl_verify
-        'online' // Set status to online by default
+        'unknown' // Set status to unknown by default - will be determined by connection test
       ]
     );
     
@@ -649,7 +650,8 @@ app.post('/api/nodes', async (req, res) => {
       ssh_password: null, // Don't send password back to client
       use_ssl: true,
       verify_ssl: verify_ssl || false,
-      status: node.node_status || 'online', // Include status in response
+      status: node.node_status || 'unknown', // Use node_status but default to unknown
+      node_status: node.node_status || 'unknown', // Include both for consistency
       created_at: node.created_at
     };
     
@@ -887,7 +889,8 @@ app.get('/api/nodes/:id', async (req, res) => {
       ssh_password: dbNode.password,
       use_ssl: true,
       verify_ssl: false,
-      status: dbNode.node_status || 'online'
+      status: dbNode.node_status || 'unknown',
+      node_status: dbNode.node_status || 'unknown'
     };
     
     // Connect to Proxmox API to get real-time data

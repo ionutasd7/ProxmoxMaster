@@ -32,10 +32,10 @@ export class DashboardView {
       // Fetch dashboard data from API
       const dashboardData = await this.fetchDashboardData();
       const clusterStats = dashboardData?.cluster?.stats || {
-        totalNodes: nodes.length,
+        totalNodes: 0,
         onlineNodes: 0,
         warningNodes: 0,
-        offlineNodes: nodes.length,
+        offlineNodes: 0,
         totalVMs: 0,
         runningVMs: 0,
         totalContainers: 0,
@@ -165,7 +165,7 @@ export class DashboardView {
               <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center">
                   <div>
-                    <div class="stat-value">${nodes.length}</div>
+                    <div class="stat-value">0</div>
                     <div class="stat-label">Proxmox Nodes</div>
                   </div>
                   <div class="stat-icon">
@@ -355,7 +355,7 @@ export class DashboardView {
             <i class="fas fa-server"></i>
           </div>
         </div>
-        <div class="stat-value">${nodes.length}</div>
+        <div class="stat-value">${nodes?.length || 0}</div>
         <div class="stat-subtitle">Proxmox servers</div>
       </div>
       
@@ -366,7 +366,7 @@ export class DashboardView {
             <i class="fas fa-desktop"></i>
           </div>
         </div>
-        <div class="stat-value">${vms.length}</div>
+        <div class="stat-value">${vms?.length || 0}</div>
         <div class="stat-subtitle">QEMU/KVM VMs</div>
       </div>
       
@@ -377,7 +377,7 @@ export class DashboardView {
             <i class="fas fa-box"></i>
           </div>
         </div>
-        <div class="stat-value">${containers.length}</div>
+        <div class="stat-value">${containers?.length || 0}</div>
         <div class="stat-subtitle">LXC containers</div>
       </div>
       
